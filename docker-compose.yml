@@ -1,0 +1,112 @@
+services:
+  # ─── FastAPI (REST API + WebSocket + MCP SSE) ───
+  api:
+    build: .
+    container_name: ai-code-review-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:?请设置 DEEPSEEK_API_KEY 环境变量}
+      - DATABASE_URL=postgresql+psycopg2://postgres:postgres@db:5432/ai_code_review
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - review_data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - review-net
+
+  # ─── Celery Worker (异步审查任务) ──────────────
+  worker:
+    build: .
+    container_name: ai-code-review-worker
+    entrypoint: ["celery", "-A", "celery_app", "worker"]
+    command: ["--loglevel=info", "--concurrency=2"]
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:?请设置 DEEPSEEK_API_KEY 环境变量}
+      - DATABASE_URL=postgresql+psycopg2://postgres:postgres@db:5432/ai_code_review
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    restart: unless-stopped
+    networks:
+      - review-net
+
+  # ─── Redis (消息队列 + 结果存储) ──────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ai-code-review-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - review-net
+
+  # ─── PostgreSQL ─────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: ai-code-review-db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=ai_code_review
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - review-net
+
+  # ─── pgAdmin（可选：数据库管理界面）────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: ai-code-review-pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@code-review.local
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    ports:
+      - "5433:80"
+    depends_on:
+      - db
+    restart: unless-stopped
+    networks:
+      - review-net
+    profiles:
+      - dev  # 默认不启动，docker compose --profile dev up 时才启动
+
+networks:
+  review-net:
+    driver: bridge
+
+volumes:
+  pgdata:
+  review_data:

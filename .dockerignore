@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Git
+.git/
+.gitignore
+
+# Data
+data/
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Docker
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 不需要打包进镜像的文档
+README.md

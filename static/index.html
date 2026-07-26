@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Code Review</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: { 50: '#eef2ff', 100: '#e0e7ff', 200: '#c7d2fe', 300: '#a5b4fc', 400: '#818cf8', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca', 800: '#3730a3', 900: '#312e81' }
+          },
+          fontFamily: { sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'], mono: ['JetBrains Mono', 'Fira Code', 'monospace'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pulseDot { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+    @keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+    .animate-fadeIn { animation: fadeIn 0.5s ease-out; }
+    .animate-slideUp { animation: slideUp 0.4s ease-out; }
+    .animate-gradient { background-size: 200% 200%; animation: gradientShift 8s ease infinite; }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    .glass { background: rgba(255,255,255,0.7); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+    .dark .glass { background: rgba(17,24,39,0.7); }
+    .drop-zone { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    .drop-zone:hover { border-color: #6366f1; box-shadow: 0 0 0 4px rgba(99,102,241,0.1); }
+    .dark .drop-zone:hover { box-shadow: 0 0 0 4px rgba(99,102,241,0.15); }
+    .drop-zone.dragover { border-color: #6366f1; background: rgba(99,102,241,0.05); }
+    .dark .drop-zone.dragover { background: rgba(99,102,241,0.1); }
+    #reportContent h1 { font-size: 1.25rem; font-weight: 700; margin: 1.2rem 0 0.6rem; color: #1f2937; letter-spacing: -0.01em; }
+    #reportContent h2 { font-size: 1.1rem; font-weight: 600; margin: 1rem 0 0.4rem; color: #374151; }
+    #reportContent h3 { font-size: 1rem; font-weight: 600; margin: 0.8rem 0 0.3rem; }
+    #reportContent p { margin: 0.5rem 0; line-height: 1.7; }
+    #reportContent ul, #reportContent ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+    #reportContent li { margin: 0.25rem 0; line-height: 1.6; }
+    #reportContent code { background: #f3f4f6; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.8rem; font-family: 'JetBrains Mono', monospace; }
+    #reportContent pre { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 8px; overflow-x: auto; margin: 0.8rem 0; font-size: 0.8rem; line-height: 1.6; }
+    #reportContent pre code { background: none; padding: 0; color: inherit; }
+    #reportContent table { border-collapse: collapse; width: 100%; margin: 0.8rem 0; font-size: 0.85rem; border-radius: 8px; overflow: hidden; }
+    #reportContent th, #reportContent td { border: 1px solid #e5e7eb; padding: 0.5rem 0.75rem; text-align: left; }
+    #reportContent th { background: #f9fafb; font-weight: 600; color: #374151; }
+    #reportContent strong { font-weight: 600; color: #111827; }
+    #reportContent hr { border: none; border-top: 1px solid #e5e7eb; margin: 1.2rem 0; }
+    .dark #reportContent h1 { color: #f3f4f6; }
+    .dark #reportContent h2 { color: #e5e7eb; }
+    .dark #reportContent code { background: #374151; color: #d1d5db; }
+    .dark #reportContent th { background: #1f2937; color: #e5e7eb; }
+    .dark #reportContent th, .dark #reportContent td { border-color: #374151; }
+    .dark #reportContent hr { border-color: #374151; }
+    .dark #reportContent strong { color: #f9fafb; }
+    .dark #reportContent pre { background: #0f172a; }
+    .btn-primary { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(99,102,241,0.4); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled { transform: none; box-shadow: none; }
+    .tab-btn { transition: all 0.2s ease; }
+    .finding-item { animation: slideUp 0.3s ease-out; animation-fill-mode: both; }
+    .finding-item:nth-child(1) { animation-delay: 0.05s; }
+    .finding-item:nth-child(2) { animation-delay: 0.1s; }
+    .finding-item:nth-child(3) { animation-delay: 0.15s; }
+    .finding-item:nth-child(4) { animation-delay: 0.2s; }
+    .finding-item:nth-child(5) { animation-delay: 0.25s; }
+    .severity-badge { font-variant-numeric: tabular-nums; }
+    textarea::placeholder { color: #9ca3af; }
+  </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 min-h-screen transition-colors">
+  <!-- 背景装饰 -->
+  <div class="fixed inset-0 pointer-events-none overflow-hidden">
+    <div class="absolute -top-40 -right-40 w-96 h-96 bg-primary-100 dark:bg-primary-900/20 rounded-full blur-3xl opacity-30"></div>
+    <div class="absolute -bottom-40 -left-40 w-96 h-96 bg-purple-100 dark:bg-purple-900/20 rounded-full blur-3xl opacity-30"></div>
+  </div>
+
+  <div id="app" class="relative max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+    <!-- Header -->
+    <header class="flex items-center justify-between mb-8 sm:mb-10 animate-fadeIn">
+      <div class="flex items-center gap-3 sm:gap-4">
+        <div class="w-11 h-11 sm:w-12 sm:h-12 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl sm:rounded-2xl flex items-center justify-center text-white font-extrabold text-lg sm:text-xl shadow-lg shadow-primary-500/20">CR</div>
+        <div>
+          <h1 class="text-xl sm:text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">AI Code Review</h1>
+          <p class="text-sm text-gray-400 dark:text-gray-500">基于 LangGraph 的多 Agent 代码审查系统</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 sm:gap-3">
+        <button id="darkToggle" class="p-2.5 rounded-xl hover:bg-gray-200/50 dark:hover:bg-gray-700/50 text-gray-400 dark:text-gray-500 transition-all" title="切换主题">
+          <svg class="w-5 h-5 dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          <svg class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+        </button>
+        <div id="statusDot" class="flex items-center gap-1.5 text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-full">
+          <span class="w-1.5 h-1.5 rounded-full bg-gray-300"></span>
+          <span>连接中...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <div class="flex gap-1 bg-white dark:bg-gray-800/50 p-1 rounded-2xl shadow-sm border border-gray-200/50 dark:border-gray-700/50 mb-6 sm:mb-8 animate-slideUp">
+      <button class="tab-btn flex-1 py-2.5 px-4 rounded-xl text-sm font-medium transition-all" onclick="switchTab('new')">
+        <span class="hidden sm:inline">✨</span> 新审查
+      </button>
+      <button class="tab-btn flex-1 py-2.5 px-4 rounded-xl text-sm font-medium transition-all text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300" onclick="switchTab('history')">
+        <span class="hidden sm:inline">📋</span> 历史
+      </button>
+      <button class="tab-btn flex-1 py-2.5 px-4 rounded-xl text-sm font-medium transition-all text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300" onclick="switchTab('stats')">
+        <span class="hidden sm:inline">📊</span> 统计
+      </button>
+    </div>
+
+    <!-- Panel: New Review -->
+    <div id="panelNew" class="tab-panel animate-fadeIn">
+      <div class="bg-white dark:bg-gray-800/80 rounded-2xl sm:rounded-3xl shadow-sm border border-gray-200/50 dark:border-gray-700/50 p-5 sm:p-8 backdrop-blur-sm">
+        <div class="flex items-center gap-3 mb-6">
+          <div class="w-8 h-8 rounded-lg bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
+            <svg class="w-4 h-4 text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+          </div>
+          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">提交代码审查</h2>
+        </div>
+
+        <form id="reviewForm" onsubmit="submitReview(event)" class="space-y-5">
+          <!-- Drop Zone -->
+          <div id="dropZone" class="drop-zone relative border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-xl sm:rounded-2xl bg-gray-50/50 dark:bg-gray-900/30 cursor-pointer group">
+            <textarea id="inputCode" rows="12"
+              class="w-full rounded-xl sm:rounded-2xl border-0 bg-transparent px-5 py-4 sm:px-6 sm:py-5 text-sm text-gray-900 dark:text-white font-mono focus:ring-0 placeholder-gray-400 dark:placeholder-gray-500 resize-none cursor-pointer"
+              placeholder="将代码文件拖放到此处&#10;或直接粘贴代码&#10;&#10;支持 .py .js .ts .java .go .rs .cpp ..."></textarea>
+
+            <!-- Drag Overlay -->
+            <div id="dropOverlay" class="absolute inset-0 bg-primary-50/80 dark:bg-primary-900/30 rounded-xl sm:rounded-2xl flex items-center justify-center opacity-0 pointer-events-none transition-all duration-300 border-2 border-primary-400">
+              <div class="text-center">
+                <div class="w-16 h-16 mx-auto mb-3 rounded-2xl bg-primary-100 dark:bg-primary-800/30 flex items-center justify-center">
+                  <svg class="w-8 h-8 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                </div>
+                <p class="text-base font-semibold text-primary-600 dark:text-primary-400">释放以上传文件</p>
+              </div>
+            </div>
+
+            <!-- Bottom Actions -->
+            <div class="absolute bottom-3 right-3 flex items-center gap-2">
+              <label for="fileInput" class="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer shadow-sm transition-all hover:shadow-md hover:border-primary-300 dark:hover:border-primary-500">
+                <span class="flex items-center gap-1.5">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+                  选择文件
+                </span>
+              </label>
+            </div>
+          </div>
+          <input id="fileInput" type="file" class="hidden" accept=".py,.js,.ts,.jsx,.tsx,.java,.go,.rs,.c,.cpp,.h,.cs,.rb,.php,.swift,.kt,.scala,.sh,.bash,.sql,.html,.css,.json,.yaml,.yml,.md,.toml,.ini,.cfg,.txt,.proto,.vue,.svelte">
+
+          <!-- File Info -->
+          <div id="fileInfo" class="hidden flex items-center gap-2 px-4 py-2.5 bg-primary-50/50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 text-sm rounded-xl border border-primary-100 dark:border-primary-800/30 animate-slideUp">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span id="fileInfoText"></span>
+          </div>
+
+          <!-- Submit -->
+          <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 pt-1">
+            <button type="submit" id="submitBtn" class="btn-primary w-full sm:w-auto px-6 sm:px-8 py-3 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white text-sm font-semibold rounded-xl shadow-lg shadow-primary-500/20 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+              <svg id="submitIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              开始审查
+            </button>
+            <span class="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1.5">
+              <span class="w-1 h-1 rounded-full bg-green-400"></span>
+              支持拖放文件、粘贴代码、选择文件
+            </span>
+          </div>
+        </form>
+      </div>
+
+      <!-- Result -->
+      <div id="resultArea" class="mt-6 sm:mt-8 hidden animate-slideUp">
+        <!-- Progress -->
+        <div id="progressBar" class="glass dark:bg-gray-800/60 rounded-2xl sm:rounded-3xl shadow-sm border border-gray-200/50 dark:border-gray-700/50 p-5 sm:p-7 mb-6 hidden">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-5 h-5 border-2 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
+            <span id="progressText" class="text-sm text-gray-600 dark:text-gray-400 font-medium">审查进行中...</span>
+          </div>
+          <div class="w-full h-2 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div id="progressFill" class="h-full bg-gradient-to-r from-primary-400 to-primary-600 rounded-full transition-all duration-500 ease-out" style="width:0%"></div>
+          </div>
+        </div>
+
+        <!-- Result Card -->
+        <div id="resultCard" class="bg-white dark:bg-gray-800/80 rounded-2xl sm:rounded-3xl shadow-sm border border-gray-200/50 dark:border-gray-700/50 overflow-hidden hidden backdrop-blur-sm">
+          <!-- Header -->
+          <div class="p-5 sm:p-7 border-b border-gray-100 dark:border-gray-700/50">
+            <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="flex items-center gap-2.5 mb-1.5">
+                  <div class="w-6 h-6 rounded-md bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
+                    <svg class="w-3.5 h-3.5 text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  </div>
+                  <h3 class="text-lg font-semibold text-gray-900 dark:text-white">审查结果</h3>
+                </div>
+                <p id="resultSummary" class="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2"></p>
+              </div>
+              <div class="flex gap-2 shrink-0">
+                <span id="badgeFiles" class="px-3 py-1.5 bg-gray-100 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 text-xs font-medium rounded-lg whitespace-nowrap"></span>
+                <span id="badgeTime" class="px-3 py-1.5 bg-gray-100 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 text-xs font-medium rounded-lg whitespace-nowrap"></span>
+              </div>
+            </div>
+            <!-- Severity -->
+            <div id="severityStats" class="grid grid-cols-4 gap-2 sm:gap-3 mt-4 sm:mt-5"></div>
+          </div>
+
+          <!-- Findings -->
+          <div class="p-5 sm:p-7 border-b border-gray-100 dark:border-gray-700/50">
+            <div class="flex items-center gap-2 mb-4">
+              <h4 class="text-sm font-semibold text-gray-900 dark:text-white">发现问题</h4>
+              <span id="findingsCount" class="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-xs rounded-md"></span>
+            </div>
+            <div id="findingsList" class="space-y-2.5"></div>
+            <div id="noFindings" class="hidden text-center py-10">
+              <div class="w-14 h-14 mx-auto mb-3 rounded-2xl bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
+                <svg class="w-7 h-7 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              </div>
+              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">未发现问题，代码质量不错！</p>
+            </div>
+          </div>
+
+          <!-- Report -->
+          <div class="p-5 sm:p-7">
+            <div class="flex items-center gap-2 mb-4">
+              <h4 class="text-sm font-semibold text-gray-900 dark:text-white">完整报告</h4>
+            </div>
+            <div id="reportContent" class="text-sm leading-relaxed bg-gray-50/50 dark:bg-gray-900/30 rounded-xl p-4 sm:p-5 overflow-auto max-h-96"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel: History -->
+    <div id="panelHistory" class="tab-panel hidden animate-fadeIn">
+      <div class="bg-white dark:bg-gray-800/80 rounded-2xl sm:rounded-3xl shadow-sm border border-gray-200/50 dark:border-gray-700/50 p-5 sm:p-7 backdrop-blur-sm">
+        <div class="flex items-center justify-between mb-5">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
+              <svg class="w-4 h-4 text-primary-600 dark:text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">审查历史</h2>
+          </div>
+          <button onclick="loadHistory()" class="px-3 py-1.5 text-xs font-medium text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-colors">刷新</button>
+        </div>
+        <div id="historyList" class="space-y-1">
+          <div class="text-center py-16 text-gray-400 dark:text-gray-500 text-sm">加载中...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel: Stats -->
+    <div id="panelStats" class="tab-panel hidden animate-fadeIn">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="bg-white dark:bg-gray-800/80 rounded-2xl shadow-sm border border-gray-200/50 dark:border-gray-700/50 p-6 sm:p-8 text-center backdrop-blur-sm">
+          <p class="text-3xl sm:text-4xl font-extrabold text-gray-900 dark:text-white" id="statTotal">-</p>
+          <p class="text-sm text-gray-400 dark:text-gray-500 mt-1.5">总审查次数</p>
+        </div>
+        <div class="bg-white dark:bg-gray-800/80 rounded-2xl shadow-sm border border-gray-200/50 dark:border-gray-700/50 p-6 sm:p-8 text-center backdrop-blur-sm">
+          <p class="text-3xl sm:text-4xl font-extrabold text-green-500" id="statCompleted">-</p>
+          <p class="text-sm text-gray-400 dark:text-gray-500 mt-1.5">审查成功</p>
+        </div>
+        <div class="bg-white dark:bg-gray-800/80 rounded-2xl shadow-sm border border-gray-200/50 dark:border-gray-700/50 p-6 sm:p-8 text-center backdrop-blur-sm">
+          <p class="text-3xl sm:text-4xl font-extrabold text-orange-500" id="statIssues">-</p>
+          <p class="text-sm text-gray-400 dark:text-gray-500 mt-1.5">累计发现问题</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const dropZone = document.getElementById('dropZone');
+      const textarea = document.getElementById('inputCode');
+      const overlay = document.getElementById('dropOverlay');
+      const fileInfo = document.getElementById('fileInfo');
+      const fileInfoText = document.getElementById('fileInfoText');
+
+      // 拖放
+      dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+        overlay.classList.remove('opacity-0', 'pointer-events-none');
+      });
+      dropZone.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        overlay.classList.add('opacity-0', 'pointer-events-none');
+      });
+      dropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        overlay.classList.add('opacity-0', 'pointer-events-none');
+        const file = e.dataTransfer.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+          textarea.value = ev.target.result;
+          fileInfoText.textContent = '已加载: ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+          fileInfo.classList.remove('hidden');
+        };
+        reader.readAsText(file);
+      });
+
+      // 选择文件
+      document.getElementById('fileInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+          textarea.value = ev.target.result;
+          fileInfoText.textContent = '已加载: ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+          fileInfo.classList.remove('hidden');
+        };
+        reader.readAsText(file);
+      });
+
+      // 默认选中第一个 tab
+      switchTab('new');
+    });
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
