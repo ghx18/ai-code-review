@@ -74,6 +74,7 @@ class CodeReviewState(TypedDict):
     review_status: str         # analyzing / reviewing / aggregating / fixing / reporting / done / error
     has_critical_issues: bool  # 是否有严重问题
     total_files: int           # 审查的文件总数
+    skipped_files: int         # 因数量限制跳过的文件数
 
 
 def empty_state() -> CodeReviewState:
@@ -98,6 +99,7 @@ def empty_state() -> CodeReviewState:
         "review_status": "analyzing",
         "has_critical_issues": False,
         "total_files": 0,
+        "skipped_files": 0,
     }
 
 
