@@ -71,6 +71,7 @@ class CodeReviewState(TypedDict):
     # ── 控制 ──
     error: str                 # 错误信息
     agent_errors: list         # 记录哪些Agent调用失败，比如 ["security", "performance"]
+    _batch_mode: bool          # 分批模式下跳过重复扫描
     review_status: str         # analyzing / reviewing / aggregating / fixing / reporting / done / error
     has_critical_issues: bool  # 是否有严重问题
     total_files: int           # 审查的文件总数
@@ -96,6 +97,7 @@ def empty_state() -> CodeReviewState:
         "report": "",
         "error": "",
         "agent_errors": [],
+        "_batch_mode": False,
         "review_status": "analyzing",
         "has_critical_issues": False,
         "total_files": 0,

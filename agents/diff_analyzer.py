@@ -22,8 +22,13 @@ def diff_analyzer_node(state: CodeReviewState) -> dict:
       - "git_diff": 解析 git diff
       - "file": 读取单个文件
       - "directory": 扫描目录
+    如果 files_changed 已存在（分批模式），跳过扫描。
     """
     try:
+        # 分批模式：文件已经准备好了，直接过
+        if state.get("files_changed") and state.get("_batch_mode"):
+            return {"review_status": "reviewing"}
+
         input_type = state.get("input_type", "")
         input_path = state.get("input_path", "")
 
@@ -100,8 +105,8 @@ def _handle_single_file(filepath: str) -> dict:
 
 
 def _handle_directory(directory: str) -> dict:
-    """处理目录输入（最多处理 5 个文件，避免超时）"""
-    MAX_FILES = 5
+    """处理目录输入——全量返回，分批逻辑在 graph.py 中"""
+    BATCH_SIZE = 5  # 每批审多少个，graph.py 里也用这个值
 
     if not os.path.isdir(directory):
         return {"error": f"目录不存在: {directory}", "review_status": "error"}
@@ -110,16 +115,14 @@ def _handle_directory(directory: str) -> dict:
     if not files:
         return {"error": f"目录中没有找到可审查的代码文件: {directory}", "review_status": "error"}
 
-    # 限制文件数，避免 LLM 上下文超长
     total = len(files)
-    if total > MAX_FILES:
+    if total > BATCH_SIZE:
         from utils import log
-        log(f"⚠️ 目录中有 {total} 个文件，仅审查前 {MAX_FILES} 个（用 --file 逐个审查）")
-        files = files[:MAX_FILES]
+        log(f"📁 共 {total} 个文件，分批审查中（每批 {BATCH_SIZE} 个，共 {(total + BATCH_SIZE - 1) // BATCH_SIZE} 批）")
 
     return {
         "files_changed": files,
-        "total_files": MAX_FILES,
-        "skipped_files": max(0, total - MAX_FILES),
+        "total_files": total,
+        "skipped_files": 0,
         "review_status": "reviewing",
     }

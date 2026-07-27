@@ -131,6 +131,111 @@ def build_graph():
     return builder.compile()
 
 
+BATCH_SIZE = 5  # 每批处理的文件数
+
+
+def _run_batched_review(directory: str) -> CodeReviewState:
+    """
+    分批审查目录下的所有文件。
+
+    流程：
+      1. 扫描目录获取所有文件
+      2. 每 BATCH_SIZE 个文件为一批，逐批运行完整图
+      3. 合并所有审查结果，生成一份统一报告
+    """
+    from tools.git_tools import scan_directory, get_file_language
+    from agents.report_generator import report_generator_node
+    from agents.aggregator import aggregator_node
+    from datetime import datetime
+
+    all_files = scan_directory(directory)
+    if not all_files:
+        state = empty_state()
+        state["input_type"] = "directory"
+        state["input_path"] = directory
+        state["error"] = "目录中没有可审查的代码文件"
+        state["report"] = "# ❌ 审查失败\n\n目录中没有可审查的代码文件。"
+        state["review_status"] = "error"
+        return state
+
+    total_files = len(all_files)
+    num_batches = (total_files + BATCH_SIZE - 1) // BATCH_SIZE
+    graph = build_graph()
+
+    all_findings = []
+    all_fixes = []
+    agent_errors = set()
+
+    for batch_idx in range(num_batches):
+        start = batch_idx * BATCH_SIZE
+        end = start + BATCH_SIZE
+        batch_files = all_files[start:end]
+
+        state = empty_state()
+        state["input_type"] = "directory"
+        state["input_path"] = directory
+        state["files_changed"] = batch_files
+        state["total_files"] = len(batch_files)
+        state["_batch_mode"] = True
+
+        result = graph.invoke(state)
+
+        all_findings.extend(result.get("aggregated_findings", []))
+        all_fixes.extend(result.get("fix_suggestions", []))
+        agent_errors.update(result.get("agent_errors", []))
+
+    # ── 合并所有批次的结果，生成统一报告 ──
+    merged_state = empty_state()
+    merged_state["input_type"] = "directory"
+    merged_state["input_path"] = directory
+    merged_state["total_files"] = total_files
+    merged_state["agent_errors"] = list(agent_errors)
+
+    # 用聚合器处理合并后的 findings
+    if all_findings or agent_errors:
+        merge_state_for_agg = {
+            "security_findings": [f for f in all_findings if f.get("category") == "security"],
+            "performance_findings": [f for f in all_findings if f.get("category") == "performance"],
+            "style_findings": [f for f in all_findings if f.get("category") == "style"],
+            "logic_findings": [f for f in all_findings if f.get("category") == "logic"],
+            "agent_errors": list(agent_errors),
+            "error": "",
+            "review_status": "aggregating",
+        }
+        agg_result = aggregator_node({**empty_state(), **merge_state_for_agg})
+        merged_state.update(agg_result)
+        merged_state["aggregated_findings"] = agg_result.get("aggregated_findings", all_findings)
+        merged_state["summary"] = agg_result.get("summary", "")
+        merged_state["stats"] = agg_result.get("stats", {})
+
+        if agg_result.get("aggregated_findings"):
+            # 有发现 → 尝试生成修复建议
+            from agents.fix_generator import fix_generator_node
+            fix_state = {**merged_state, "aggregated_findings": agg_result.get("aggregated_findings", [])}
+            fix_result = fix_generator_node(fix_state)
+            merged_state["fix_suggestions"] = fix_result.get("fix_suggestions", all_fixes)
+        else:
+            merged_state["fix_suggestions"] = []
+    else:
+        merged_state["aggregated_findings"] = []
+        merged_state["summary"] = "✅ 代码审查通过，未发现任何问题。"
+        merged_state["stats"] = {}
+        merged_state["fix_suggestions"] = []
+
+    # 生成统一报告
+    final_state = {**empty_state(), **merged_state}
+    report_result = report_generator_node(final_state)
+    merged_state["report"] = report_result.get("report", "")
+    merged_state["review_status"] = "done"
+
+    # 添加批次信息到报告
+    if num_batches > 1:
+        batch_info = f"\n\n> 📦 共审查 {total_files} 个文件，分 {num_batches} 批完成。"
+        merged_state["report"] += batch_info
+
+    return merged_state
+
+
 def run_review(input_type: str, input_path: str) -> CodeReviewState:
     """
     运行代码审查
@@ -147,6 +252,10 @@ def run_review(input_type: str, input_path: str) -> CodeReviewState:
             sys.stdin.reconfigure(encoding="utf-8")
         except Exception:
             pass
+
+    # 目录 → 分批处理
+    if input_type == "directory":
+        return _run_batched_review(input_path)
 
     graph = build_graph()
     initial_state = empty_state()
