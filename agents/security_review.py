@@ -70,7 +70,7 @@ def security_review_node(state: CodeReviewState) -> dict:
     if not review_files:
         return {"security_findings": []}
 
-    code = format_diff_for_review(review_files)
+    code = format_diff_for_review(review_files, max_tokens=4000)
     if not code.strip():
         return {"security_findings": []}
 

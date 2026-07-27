@@ -302,9 +302,49 @@ def scan_directory(directory: str) -> list:
     return files
 
 
-def format_diff_for_review(files: list) -> str:
+def estimate_tokens(text: str) -> int:
     """
-    将 FileChange 列表格式化为 LLM 能理解的文本
+    粗略估算文本的 Token 数。
+    中文约 1.5 字符/token，英文约 4 字符/token，取保守值 2。
+    """
+    if not text:
+        return 0
+    return len(text) // 2 + 1
+
+
+def truncate_content(text: str, max_tokens: int = 4000, file_label: str = "") -> str:
+    """
+    如果内容超过 max_tokens，截断保留头尾。
+    优先保留文件头部（结构/import）和变更部分。
+
+    返回:
+        截断后的文本
+    """
+    estimated = estimate_tokens(text)
+    if estimated <= max_tokens:
+        return text
+
+    # 保留比例：前 60% 后 40%
+    keep_chars = max_tokens * 2  # 估算字符数
+    head_chars = int(keep_chars * 0.6)
+    tail_chars = keep_chars - head_chars
+
+    truncated = text[:head_chars] + text[-tail_chars:]
+    warning = (
+        f"\n\n⚠️ [内容截断] {file_label} "
+        f"原内容约 {estimated} token，已截断至 {max_tokens} token。"
+        f"\n   保留了文件开头和末尾部分。如需完整审查，请缩小文件范围。\n"
+    )
+    return truncated + warning
+
+
+def format_diff_for_review(files: list, max_tokens: int = 6000) -> str:
+    """
+    将 FileChange 列表格式化为 LLM 能理解的文本。
+
+    参数:
+        files: FileChange 列表
+        max_tokens: 输出内容的最大 token 数（超限自动截断）
 
     返回:
         格式化后的审查文本
@@ -324,14 +364,22 @@ def format_diff_for_review(files: list) -> str:
 
         # 优先用 diff 内容，没有则用完整内容
         if f.get("diff_content"):
+            code = f["diff_content"]
+            code = truncate_content(code, max_tokens // len(files), fpath)
             parts.append("```diff")
-            parts.append(f["diff_content"])
+            parts.append(code)
             parts.append("```")
         elif f.get("content"):
+            code = f["content"]
+            code = truncate_content(code, max_tokens // len(files), fpath)
             parts.append(f"```{lang}")
-            parts.append(f["content"])
+            parts.append(code)
             parts.append("```")
 
         parts.append("")
 
-    return "\n".join(parts)
+    result = "\n".join(parts)
+
+    # 整体再检查一次
+    result = truncate_content(result, max_tokens, "全部文件")
+    return result
