@@ -47,6 +47,9 @@ def report_generator_node(state: CodeReviewState) -> dict:
     report_parts.append(f"| 指标 | 数值 |")
     report_parts.append(f"|------|------|")
     report_parts.append(f"| 审查文件数 | {state.get('total_files', 0)} |")
+    skipped = state.get("skipped_files", 0)
+    if skipped:
+        report_parts.append(f"| ⚠️ 跳过文件 | {skipped} 个（超出审查上限） |")
     report_parts.append(f"| 发现问题数 | {total} |")
 
     if stats:
@@ -143,7 +146,10 @@ def report_generator_node(state: CodeReviewState) -> dict:
         report_parts.append(f"")
         report_parts.append(f"这可能是因为 DeepSeek API 暂时不可用、网络连接异常或 API Key 配置问题。")
     elif total == 0:
-        report_parts.append(f"✅ 代码质量良好，未发现明显问题。")
+        if skipped:
+            report_parts.append(f"⚠️ 仅审查了部分文件，被跳过的 {skipped} 个文件未被检查。")
+        else:
+            report_parts.append(f"✅ 代码质量良好，未发现明显问题。")
     else:
         if stats.get("critical", 0) > 0:
             report_parts.append(f"⚠️ 存在严重问题，建议修复后再合并。")

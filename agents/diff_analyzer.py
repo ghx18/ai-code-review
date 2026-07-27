@@ -111,13 +111,15 @@ def _handle_directory(directory: str) -> dict:
         return {"error": f"目录中没有找到可审查的代码文件: {directory}", "review_status": "error"}
 
     # 限制文件数，避免 LLM 上下文超长
-    if len(files) > MAX_FILES:
+    total = len(files)
+    if total > MAX_FILES:
         from utils import log
-        log(f"⚠️ 目录中有 {len(files)} 个文件，仅审查前 {MAX_FILES} 个（用 --file 逐个审查）")
+        log(f"⚠️ 目录中有 {total} 个文件，仅审查前 {MAX_FILES} 个（用 --file 逐个审查）")
         files = files[:MAX_FILES]
 
     return {
         "files_changed": files,
-        "total_files": len(files),
+        "total_files": MAX_FILES,
+        "skipped_files": max(0, total - MAX_FILES),
         "review_status": "reviewing",
     }
