@@ -2,7 +2,7 @@
 ② 安全审查 Agent — SQL注入、XSS、敏感信息泄露等（多语言）
 ===========================================================
 """
-from tools.llm import get_llm
+from tools.llm import safe_invoke
 from tools.git_tools import format_diff_for_review
 from state import CodeReviewState
 from utils import log
@@ -77,17 +77,14 @@ def security_review_node(state: CodeReviewState) -> dict:
     lang = _get_languages(review_files)
     prompt = SECURITY_PROMPT.replace("{language}", lang).replace("{code}", code)
 
-    try:
-        llm = get_llm(temperature=0.1)  # 低温度，更精确
-        resp = llm.invoke(prompt)
-        text = resp.content if hasattr(resp, "content") else str(resp)
+    text, ok = safe_invoke(prompt, temperature=0.1)
+    if not ok:
+        log(f"[安全审查] 跳过（API不可用）: {text}")
+        return {"security_findings": []}
 
-        # 提取 JSON
-        json_match = re.search(r'\[.*\]', text, re.DOTALL)
-        if json_match:
-            findings = json.loads(json_match.group())
-            return {"security_findings": findings}
-        return {"security_findings": []}
-    except Exception as e:
-        log(f"[安全审查] 失败: {e}")
-        return {"security_findings": []}
+    # 提取 JSON
+    json_match = re.search(r'\[.*\]', text, re.DOTALL)
+    if json_match:
+        findings = json.loads(json_match.group())
+        return {"security_findings": findings}
+    return {"security_findings": []}

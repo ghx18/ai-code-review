@@ -2,7 +2,7 @@
 ② 性能审查 Agent — 慢查询、不必要的循环、缓存等（多语言）
 ===========================================================
 """
-from tools.llm import get_llm
+from tools.llm import safe_invoke
 from tools.git_tools import format_diff_for_review
 from state import CodeReviewState
 from utils import log
@@ -77,16 +77,13 @@ def performance_review_node(state: CodeReviewState) -> dict:
     lang = _get_languages(review_files)
     prompt = PERFORMANCE_PROMPT.replace("{language}", lang).replace("{code}", code)
 
-    try:
-        llm = get_llm(temperature=0.1)
-        resp = llm.invoke(prompt)
-        text = resp.content if hasattr(resp, "content") else str(resp)
+    text, ok = safe_invoke(prompt, temperature=0.1)
+    if not ok:
+        log(f"[性能审查] 跳过（API不可用）: {text}")
+        return {"performance_findings": []}
 
-        json_match = re.search(r'\[.*\]', text, re.DOTALL)
-        if json_match:
-            findings = json.loads(json_match.group())
-            return {"performance_findings": findings}
-        return {"performance_findings": []}
-    except Exception as e:
-        log(f"[性能审查] 失败: {e}")
-        return {"performance_findings": []}
+    json_match = re.search(r'\[.*\]', text, re.DOTALL)
+    if json_match:
+        findings = json.loads(json_match.group())
+        return {"performance_findings": findings}
+    return {"performance_findings": []}

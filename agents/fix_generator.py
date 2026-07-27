@@ -2,8 +2,9 @@
 ④ 修复建议 Agent — 对每个问题生成修复代码
 ===========================================
 """
-from tools.llm import get_llm
+from tools.llm import safe_invoke
 from state import CodeReviewState
+from utils import log
 
 
 FIX_PROMPT = """你是一个自动代码修复专家。根据以下代码审查发现的问题，生成具体的修复建议。
@@ -53,16 +54,13 @@ def fix_generator_node(state: CodeReviewState) -> dict:
 
     prompt = FIX_PROMPT.format(findings=json.dumps(simplified, ensure_ascii=False, indent=2))
 
-    try:
-        llm = get_llm(temperature=0.2)
-        resp = llm.invoke(prompt)
-        text = resp.content if hasattr(resp, "content") else str(resp)
-
-        json_match = re.search(r'\[.*\]', text, re.DOTALL)
-        if json_match:
-            suggestions = json.loads(json_match.group())
-            return {"fix_suggestions": suggestions}
+    text, ok = safe_invoke(prompt, temperature=0.2)
+    if not ok:
+        log(f"[修复建议] 跳过（API不可用）: {text}")
         return {"fix_suggestions": []}
-    except Exception as e:
-        print(f"  [修复建议] 失败: {e}")
-        return {"fix_suggestions": [], "error": f"修复建议生成失败: {e}"}
+
+    json_match = re.search(r'\[.*\]', text, re.DOTALL)
+    if json_match:
+        suggestions = json.loads(json_match.group())
+        return {"fix_suggestions": suggestions}
+    return {"fix_suggestions": []}
