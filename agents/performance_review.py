@@ -1,6 +1,6 @@
 """
-② 性能审查 Agent — 慢查询、不必要的循环、缓存等
-=================================================
+② 性能审查 Agent — 慢查询、不必要的循环、缓存等（多语言）
+===========================================================
 """
 from tools.llm import get_llm
 from tools.git_tools import format_diff_for_review
@@ -8,9 +8,22 @@ from state import CodeReviewState
 from utils import log
 
 
-PERFORMANCE_PROMPT = """你是一个资深性能优化工程师，负责代码性能审查。
+def _get_languages(files: list) -> str:
+    """提取文件列表中涉及的语言"""
+    langs = set()
+    for f in files:
+        lang = f.get("language", "unknown")
+        if lang and lang != "unknown":
+            langs.add(lang)
+    return "、".join(sorted(langs)) if langs else "未知"
+
+
+PERFORMANCE_PROMPT = """你是一个资深性能优化工程师，负责性能审查。
+
+当前审查的语言：{language}
 
 请严格审查以下代码变更中的性能问题，只关注性能，不要管其他问题。
+注意：根据语言特性调整审查标准（例如 Python 关注 GIL、JavaScript 关注事件循环、Java 关注 JVM 内存等）。
 
 审查维度：
 1. 不必要的循环/递归 — 可以用向量操作/批量处理代替
@@ -19,7 +32,7 @@ PERFORMANCE_PROMPT = """你是一个资深性能优化工程师，负责代码�
 4. 缓存使用不当 — 应该缓存但没缓存的重复计算
 5. 资源未释放 — 文件句柄、数据库连接、网络连接未关闭
 6. 重复计算 — 相同的计算结果可以复用
-7. 低效的数据结构 — 用 list 做频繁查找（应该用 set/dict）
+7. 低效的数据结构 — 选型不当（如用 list 做频繁查找应该用 set/dict/Map/Set）
 8. 频繁的 I/O 操作 — 可以批量合并的单次读写
 9. 不合适的并发粒度 — 锁粒度太大/太小
 10. 内存泄漏 — 不断增长的数据结构、全局缓存未清理
@@ -61,7 +74,8 @@ def performance_review_node(state: CodeReviewState) -> dict:
     if not code.strip():
         return {"performance_findings": []}
 
-    prompt = PERFORMANCE_PROMPT.replace("{code}", code)
+    lang = _get_languages(review_files)
+    prompt = PERFORMANCE_PROMPT.replace("{language}", lang).replace("{code}", code)
 
     try:
         llm = get_llm(temperature=0.1)

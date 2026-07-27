@@ -1,6 +1,6 @@
 """
-② 安全审查 Agent — SQL注入、XSS、敏感信息泄露等
-================================================
+② 安全审查 Agent — SQL注入、XSS、敏感信息泄露等（多语言）
+===========================================================
 """
 from tools.llm import get_llm
 from tools.git_tools import format_diff_for_review
@@ -8,17 +8,29 @@ from state import CodeReviewState
 from utils import log
 
 
-SECURITY_PROMPT = """你是一个资深安全工程师，负责代码安全审查。
+def _get_languages(files: list) -> str:
+    """提取文件列表中涉及的语言"""
+    langs = set()
+    for f in files:
+        lang = f.get("language", "unknown")
+        if lang and lang != "unknown":
+            langs.add(lang)
+    return "、".join(sorted(langs)) if langs else "未知"
+
+
+SECURITY_PROMPT = """你是一个资深安全工程师，负责安全审查。
+
+当前审查的语言：{language}
 
 请严格审查以下代码变更中的安全问题，只关注安全漏洞，不要管其他问题。
 
-审查维度：
+审查维度（根据语言调整）：
 1. SQL注入风险 — 直接拼接 SQL 字符串、未使用参数化查询
-2. 命令注入 — 拼接 shell 命令、使用 os.system/subprocess 处理用户输入
+2. 命令注入 — 拼接 shell 命令、使用 exec/subprocess/ProcessBuilder 处理用户输入
 3. 敏感信息泄露 — 硬编码密码/密钥/token/API Key
 4. XSS 风险 — 未转义直接输出用户输入
 5. 路径遍历 — 未校验用户输入的文件路径
-6. 不安全的反序列化 — pickle/json.loads 但没校验
+6. 不安全的反序列化 — pickle/json/eval/unsafe deserialization
 7. 权限缺失 — 未校验用户权限的操作
 8. CSRF / SSRF — 服务端发起未经验证的请求
 9. 依赖安全 — 使用已知有漏洞的库/版本
@@ -62,7 +74,8 @@ def security_review_node(state: CodeReviewState) -> dict:
     if not code.strip():
         return {"security_findings": []}
 
-    prompt = SECURITY_PROMPT.replace("{code}", code)
+    lang = _get_languages(review_files)
+    prompt = SECURITY_PROMPT.replace("{language}", lang).replace("{code}", code)
 
     try:
         llm = get_llm(temperature=0.1)  # 低温度，更精确

@@ -105,7 +105,7 @@ def report_generator_node(state: CodeReviewState) -> dict:
                 if code:
                     lang = get_file_language(file_path)
                     report_parts.append(f"")
-                    report_parts.append(f"  ```{lang if lang != 'unknown' else 'python'}")
+                    report_parts.append(f"  ```{lang if lang != 'unknown' else ''}")
                     report_parts.append(f"  {code}")
                     report_parts.append(f"  ```")
                 report_parts.append(f"")
