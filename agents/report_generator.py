@@ -138,7 +138,11 @@ def report_generator_node(state: CodeReviewState) -> dict:
     report_parts.append(f"## 📝 总结建议")
     report_parts.append(f"")
 
-    if total == 0:
+    if error:
+        report_parts.append(f"❌ **审查服务不可用：** 部分或全部审查 Agent 无法连接到 AI 服务，请稍后重试。")
+        report_parts.append(f"")
+        report_parts.append(f"这可能是因为 DeepSeek API 暂时不可用、网络连接异常或 API Key 配置问题。")
+    elif total == 0:
         report_parts.append(f"✅ 代码质量良好，未发现明显问题。")
     else:
         if stats.get("critical", 0) > 0:

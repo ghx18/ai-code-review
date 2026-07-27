@@ -80,7 +80,7 @@ def style_review_node(state: CodeReviewState) -> dict:
     text, ok = safe_invoke(prompt, temperature=0.1)
     if not ok:
         log(f"[风格审查] 跳过（API不可用）: {text}")
-        return {"style_findings": []}
+        return {"style_findings": [], "agent_errors": ["style"]}
 
     json_match = re.search(r'\[.*\]', text, re.DOTALL)
     if json_match:

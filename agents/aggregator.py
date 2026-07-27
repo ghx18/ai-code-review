@@ -4,14 +4,18 @@
 """
 from state import CodeReviewState, SEVERITY_ORDER
 
+# 4 个审查 Agent 的名字
+_REVIEW_AGENTS = ["security", "performance", "style", "logic"]
+
 
 def aggregator_node(state: CodeReviewState) -> dict:
     """
     聚合所有审查 Agent 的结果：
-    1. 合并 4 个维度的 findings
-    2. 去重（根据 file + line + title）
-    3. 按严重度排序
-    4. 统计各维度数量
+    1. 检查是否有 Agent 不可用
+    2. 合并 4 个维度的 findings
+    3. 去重（根据 file + line + title）
+    4. 按严重度排序
+    5. 统计各维度数量
     """
     all_findings = []
     all_findings.extend(state.get("security_findings", []))
@@ -19,10 +23,29 @@ def aggregator_node(state: CodeReviewState) -> dict:
     all_findings.extend(state.get("style_findings", []))
     all_findings.extend(state.get("logic_findings", []))
 
-    if not all_findings:
+    # ── 检查 Agent 服务状态 ──
+    agent_errors = state.get("agent_errors", [])
+    failed_agents = [a for a in _REVIEW_AGENTS if a in agent_errors]
+    all_agents_failed = len(failed_agents) == len(_REVIEW_AGENTS)
+
+    # 所有 Agent 都挂了 → 服务不可用
+    if all_agents_failed and not all_findings:
         return {
             "aggregated_findings": [],
-            "summary": "✅ 代码审查通过，未发现任何问题。",
+            "summary": "❌ 审查服务暂时不可用，请稍后重试。",
+            "stats": {},
+            "has_critical_issues": False,
+            "review_status": "reporting",
+            "error": "所有审查 Agent 均无法连接 DeepSeek API",
+        }
+
+    if not all_findings:
+        summary = "✅ 代码审查通过，未发现任何问题。"
+        if failed_agents:
+            summary += f" ⚠️ 部分 Agent 不可用（{', '.join(failed_agents)}），结果可能不完整。"
+        return {
+            "aggregated_findings": [],
+            "summary": summary,
             "stats": {},
             "has_critical_issues": False,
             "review_status": "reporting",
@@ -77,6 +100,9 @@ def aggregator_node(state: CodeReviewState) -> dict:
         summary_parts.append(f"🔵 {stats['info']} 个建议")
 
     summary = f"共发现 {stats['total']} 个问题。" + " ".join(summary_parts)
+
+    if failed_agents:
+        summary += f" ⚠️ 部分 Agent 不可用（{', '.join(failed_agents)}），结果可能不完整。"
 
     return {
         "aggregated_findings": unique_findings,

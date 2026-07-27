@@ -80,7 +80,7 @@ def security_review_node(state: CodeReviewState) -> dict:
     text, ok = safe_invoke(prompt, temperature=0.1)
     if not ok:
         log(f"[安全审查] 跳过（API不可用）: {text}")
-        return {"security_findings": []}
+        return {"security_findings": [], "agent_errors": ["security"]}
 
     # 提取 JSON
     json_match = re.search(r'\[.*\]', text, re.DOTALL)

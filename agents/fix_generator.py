@@ -57,7 +57,7 @@ def fix_generator_node(state: CodeReviewState) -> dict:
     text, ok = safe_invoke(prompt, temperature=0.2)
     if not ok:
         log(f"[修复建议] 跳过（API不可用）: {text}")
-        return {"fix_suggestions": []}
+        return {"fix_suggestions": [], "agent_errors": ["fix_generator"]}
 
     json_match = re.search(r'\[.*\]', text, re.DOTALL)
     if json_match:

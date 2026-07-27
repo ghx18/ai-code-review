@@ -82,7 +82,7 @@ def logic_review_node(state: CodeReviewState) -> dict:
     text, ok = safe_invoke(prompt, temperature=0.1)
     if not ok:
         log(f"[逻辑审查] 跳过（API不可用）: {text}")
-        return {"logic_findings": []}
+        return {"logic_findings": [], "agent_errors": ["logic"]}
 
     json_match = re.search(r'\[.*\]', text, re.DOTALL)
     if json_match:

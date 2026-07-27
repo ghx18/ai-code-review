@@ -70,6 +70,7 @@ class CodeReviewState(TypedDict):
 
     # ── 控制 ──
     error: str                 # 错误信息
+    agent_errors: list         # 记录哪些Agent调用失败，比如 ["security", "performance"]
     review_status: str         # analyzing / reviewing / aggregating / fixing / reporting / done / error
     has_critical_issues: bool  # 是否有严重问题
     total_files: int           # 审查的文件总数
@@ -93,6 +94,7 @@ def empty_state() -> CodeReviewState:
         "fix_suggestions": [],
         "report": "",
         "error": "",
+        "agent_errors": [],
         "review_status": "analyzing",
         "has_critical_issues": False,
         "total_files": 0,
