@@ -61,6 +61,10 @@ def fix_generator_node(state: CodeReviewState) -> dict:
 
     json_match = re.search(r'\[.*\]', text, re.DOTALL)
     if json_match:
-        suggestions = json.loads(json_match.group())
-        return {"fix_suggestions": suggestions}
+        try:
+            suggestions = json.loads(json_match.group())
+            return {"fix_suggestions": suggestions}
+        except json.JSONDecodeError as e:
+            log(f"[修复建议] JSON 解析失败: {e}")
+            return {"fix_suggestions": []}
     return {"fix_suggestions": []}

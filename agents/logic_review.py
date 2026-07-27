@@ -86,6 +86,10 @@ def logic_review_node(state: CodeReviewState) -> dict:
 
     json_match = re.search(r'\[.*\]', text, re.DOTALL)
     if json_match:
-        findings = json.loads(json_match.group())
-        return {"logic_findings": findings}
+        try:
+            findings = json.loads(json_match.group())
+            return {"logic_findings": findings}
+        except json.JSONDecodeError as e:
+            log(f"[逻辑审查] JSON 解析失败: {e}")
+            return {"logic_findings": []}
     return {"logic_findings": []}

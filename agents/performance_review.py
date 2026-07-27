@@ -84,6 +84,10 @@ def performance_review_node(state: CodeReviewState) -> dict:
 
     json_match = re.search(r'\[.*\]', text, re.DOTALL)
     if json_match:
-        findings = json.loads(json_match.group())
-        return {"performance_findings": findings}
+        try:
+            findings = json.loads(json_match.group())
+            return {"performance_findings": findings}
+        except json.JSONDecodeError as e:
+            log(f"[性能审查] JSON 解析失败: {e}")
+            return {"performance_findings": []}
     return {"performance_findings": []}

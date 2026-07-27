@@ -84,6 +84,10 @@ def style_review_node(state: CodeReviewState) -> dict:
 
     json_match = re.search(r'\[.*\]', text, re.DOTALL)
     if json_match:
-        findings = json.loads(json_match.group())
-        return {"style_findings": findings}
+        try:
+            findings = json.loads(json_match.group())
+            return {"style_findings": findings}
+        except json.JSONDecodeError as e:
+            log(f"[风格审查] JSON 解析失败: {e}")
+            return {"style_findings": []}
     return {"style_findings": []}

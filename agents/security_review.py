@@ -85,6 +85,10 @@ def security_review_node(state: CodeReviewState) -> dict:
     # 提取 JSON
     json_match = re.search(r'\[.*\]', text, re.DOTALL)
     if json_match:
-        findings = json.loads(json_match.group())
-        return {"security_findings": findings}
+        try:
+            findings = json.loads(json_match.group())
+            return {"security_findings": findings}
+        except json.JSONDecodeError as e:
+            log(f"[安全审查] JSON 解析失败: {e}，原始响应前200字符: {text[:200]}")
+            return {"security_findings": []}
     return {"security_findings": []}
