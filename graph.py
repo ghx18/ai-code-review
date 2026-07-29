@@ -17,6 +17,8 @@ from agents.logic_review import logic_review_node
 from agents.aggregator import aggregator_node
 from agents.fix_generator import fix_generator_node
 from agents.report_generator import report_generator_node
+from utils import set_trace_id, log_info
+from database import query_review_memory, save_review_memory
 
 
 def router_after_diff_analyzer(state: CodeReviewState) -> str:
@@ -253,6 +255,10 @@ def run_review(input_type: str, input_path: str) -> CodeReviewState:
         except Exception:
             pass
 
+    # 设置链路追踪 ID
+    trace_id = set_trace_id()
+    log_info(f"审查开始", input_type=input_type, input_path=input_path, trace=trace_id)
+
     # 目录 → 分批处理
     if input_type == "directory":
         return _run_batched_review(input_path)
@@ -262,11 +268,35 @@ def run_review(input_type: str, input_path: str) -> CodeReviewState:
     initial_state["input_type"] = input_type
     initial_state["input_path"] = input_path
 
+    # ── Agent 记忆注入：查询该文件的历史审查结果 ──
+    if input_type == "file" and input_path:
+        memory = query_review_memory(file_path=input_path, top_k=5)
+        if memory:
+            memory_summary = "\n".join(
+                f"[{m['severity']}][{m['category']}] {m['title']} — {m['description'][:100]}"
+                for m in memory
+            )
+            initial_state["_memory_context"] = (
+                f"## 该文件历史审查记录\n以下是从前的审查发现，请注意这些是否已修复：\n{memory_summary}\n"
+            )
+            log_info(f"注入 {len(memory)} 条历史记忆", file_path=input_path, trace=trace_id)
+
     try:
         result = graph.invoke(initial_state)
+
+        # 将本次结果存入记忆
+        findings = result.get("aggregated_findings", [])
+        review_id = result.get("review_id", None)
+        if findings and review_id:
+            save_review_memory(findings, review_id)
+
+        elapsed = result.get("elapsed_seconds", 0)
+        status = "成功" if not result.get("error") else "失败"
+        log_info(f"审查{status}", trace=trace_id, elapsed=f"{elapsed}s")
         return result
     except Exception as e:
         initial_state["error"] = str(e)
         initial_state["review_status"] = "error"
         initial_state["report"] = f"# ❌ 审查失败\n\n系统错误: {e}"
+        log_error("审查异常", exc=e, trace=trace_id)
         return initial_state

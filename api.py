@@ -39,12 +39,13 @@ warnings.filterwarnings("ignore", message="The default value of `allowed_objects
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from database import init_db, save_review, get_review, list_reviews, delete_review
 from graph import run_review
+from monitoring import metrics_endpoint, API_REQUESTS, API_LATENCY, REVIEW_TOTAL, REVIEW_LATENCY, REVIEW_ISSUES
 
 # ── 启动时初始化数据库 ──
 init_db()
@@ -172,9 +173,22 @@ class ReviewResponse(BaseModel):
 
 def _execute_review(input_type: str, input_path: str) -> tuple[dict, float, Optional[int]]:
     """执行审查并保存到数据库，返回 (result, elapsed_seconds, review_id)"""
-    start = time.time()
-    result = run_review(input_type, input_path)
-    elapsed = time.time() - start
+    with API_LATENCY.labels(endpoint="/api/review").time():
+        start = time.time()
+        result = run_review(input_type, input_path)
+        elapsed = time.time() - start
+
+    # 记录监控指标
+    status = "failed" if result.get("error") else "completed"
+    REVIEW_TOTAL.labels(input_type=input_type, status=status).inc()
+    REVIEW_LATENCY.labels(input_type=input_type).observe(elapsed)
+
+    stats = result.get("stats", {})
+    if stats:
+        for sev in ("critical", "major", "minor", "info"):
+            count = stats.get(sev, 0)
+            if count:
+                REVIEW_ISSUES.labels(severity=sev).set(count)
 
     try:
         review_id = save_review(
@@ -208,6 +222,12 @@ async def health():
         "service": "ai-code-review",
         "version": "1.0.0",
     }
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus 监控指标"""
+    return Response(content=metrics_endpoint(), media_type="text/plain")
 
 
 @app.post("/api/review", response_model=ReviewResponse)

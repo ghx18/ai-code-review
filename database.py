@@ -269,3 +269,68 @@ def _record_to_dict(record: ReviewRecord) -> dict:
             for f in record.fix_suggestions
         ],
     }
+
+
+# ═══════════════════════════════════════════════════════════
+#  Agent 记忆 — 跨会话上下文
+# ═══════════════════════════════════════════════════════════
+
+class ReviewMemoryRecord(Base):
+    """Agent 记忆：记住文件的历史审查结果"""
+    __tablename__ = "review_memory"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    file_path = Column(String(500), nullable=False, index=True)
+    category = Column(String(50), nullable=False, index=True)  # security/performance/style/logic
+    severity = Column(String(20), nullable=False)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, default="")
+    suggestion = Column(Text, default="")
+    review_id = Column(Integer, ForeignKey("reviews.id", ondelete="CASCADE"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+def save_review_memory(findings: list, review_id: int):
+    """将审查结果存入记忆"""
+    session = next(get_session())
+    try:
+        for f in findings:
+            record = ReviewMemoryRecord(
+                file_path=f.get("file", ""),
+                category=f.get("category", ""),
+                severity=f.get("severity", ""),
+                title=f.get("title", ""),
+                description=f.get("description", ""),
+                suggestion=f.get("suggestion", ""),
+                review_id=review_id,
+            )
+            session.add(record)
+        session.commit()
+    except Exception:
+        session.rollback()
+    finally:
+        session.close()
+
+
+def query_review_memory(file_path: str = "", top_k: int = 10) -> list:
+    """查询文件的历史审查记忆"""
+    session = next(get_session())
+    try:
+        query = session.query(ReviewMemoryRecord)
+        if file_path:
+            query = query.filter(ReviewMemoryRecord.file_path == file_path)
+        records = query.order_by(ReviewMemoryRecord.created_at.desc()).limit(top_k).all()
+        return [
+            {
+                "file": r.file_path,
+                "category": r.category,
+                "severity": r.severity,
+                "title": r.title,
+                "description": r.description,
+                "suggestion": r.suggestion,
+                "review_id": r.review_id,
+            }
+            for r in records
+        ]
+    finally:
+        session.close()

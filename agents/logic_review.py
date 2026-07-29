@@ -73,6 +73,9 @@ def logic_review_node(state: CodeReviewState) -> dict:
         return {"logic_findings": []}
 
     code = format_diff_for_review(review_files, max_tokens=4000)
+    memory = state.get("_memory_context", "")
+    if memory:
+        code = memory + "\n" + code
     if not code.strip():
         return {"logic_findings": []}
 
