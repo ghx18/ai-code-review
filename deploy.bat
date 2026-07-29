@@ -9,7 +9,7 @@ git push
 
 echo.
 echo [2/3] Syncing to server...
-ssh -i %USERPROFILE%\.ssh\id_ed25519 ubuntu@124.222.1.136 "cd /app/ai-code-review && git pull && docker compose restart api worker"
+ssh tencent "cd /app/ai-code-review && git pull && docker compose restart api worker"
 
 echo.
 echo [3/3] Done! http://124.222.1.136
