@@ -120,6 +120,11 @@ def main():
     if not check_api_key():
         sys.exit(1)
 
+    # 初始化数据库（确保 reviews / review_memory 等表存在）
+    # 注意：CLI 入口也必须建表，否则新加的记忆表会报 no such table
+    from database import init_db
+    init_db()
+
     # ── 开始审查（JSON 模式不输出过程）──
     if not is_json:
         print("\n" + "=" * 60)

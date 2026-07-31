@@ -8,7 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# 国内网络环境使用清华 PyPI 镜像（直接访问 pypi.org 常因 SSL 被掐断而失败）
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 
 
 # ---- Stage 2: 运行镜像 ----
