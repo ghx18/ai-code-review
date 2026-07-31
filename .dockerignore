@@ -20,6 +20,8 @@ data/
 
 # Docker
 .dockerignore
+*.tar
+*.tgz
 
 # OS
 .DS_Store
