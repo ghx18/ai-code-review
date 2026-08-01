@@ -2,7 +2,7 @@
 ② 风格审查 Agent — 命名规范、代码风格、最佳实践（多语言）
 ===========================================================
 """
-from tools.llm import safe_invoke
+from tools.llm import timed_invoke
 from tools.git_tools import format_diff_for_review
 from state import CodeReviewState
 from utils import log
@@ -80,7 +80,7 @@ def style_review_node(state: CodeReviewState) -> dict:
     lang = _get_languages(review_files)
     prompt = STYLE_PROMPT.replace("{language}", lang).replace("{code}", code)
 
-    text, ok = safe_invoke(prompt, temperature=0.1)
+    text, ok = timed_invoke("style", prompt, temperature=0.1)
     if not ok:
         log(f"[风格审查] 跳过（API不可用）: {text}")
         return {"style_findings": [], "agent_errors": ["style"]}

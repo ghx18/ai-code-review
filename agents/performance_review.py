@@ -2,7 +2,7 @@
 ② 性能审查 Agent — 慢查询、不必要的循环、缓存等（多语言）
 ===========================================================
 """
-from tools.llm import safe_invoke
+from tools.llm import timed_invoke
 from tools.git_tools import format_diff_for_review
 from state import CodeReviewState
 from utils import log
@@ -80,7 +80,7 @@ def performance_review_node(state: CodeReviewState) -> dict:
     lang = _get_languages(review_files)
     prompt = PERFORMANCE_PROMPT.replace("{language}", lang).replace("{code}", code)
 
-    text, ok = safe_invoke(prompt, temperature=0.1)
+    text, ok = timed_invoke("performance", prompt, temperature=0.1)
     if not ok:
         log(f"[性能审查] 跳过（API不可用）: {text}")
         return {"performance_findings": [], "agent_errors": ["performance"]}

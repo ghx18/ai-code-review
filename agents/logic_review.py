@@ -2,7 +2,7 @@
 ② 逻辑审查 Agent — 空指针、边界条件、并发问题等（多语言）
 ===========================================================
 """
-from tools.llm import safe_invoke
+from tools.llm import timed_invoke
 from tools.git_tools import format_diff_for_review
 from state import CodeReviewState
 from utils import log
@@ -82,7 +82,7 @@ def logic_review_node(state: CodeReviewState) -> dict:
     lang = _get_languages(review_files)
     prompt = LOGIC_PROMPT.replace("{language}", lang).replace("{code}", code)
 
-    text, ok = safe_invoke(prompt, temperature=0.1)
+    text, ok = timed_invoke("logic", prompt, temperature=0.1)
     if not ok:
         log(f"[逻辑审查] 跳过（API不可用）: {text}")
         return {"logic_findings": [], "agent_errors": ["logic"]}

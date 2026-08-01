@@ -2,7 +2,7 @@
 ② 安全审查 Agent — SQL注入、XSS、敏感信息泄露等（多语言）
 ===========================================================
 """
-from tools.llm import safe_invoke
+from tools.llm import timed_invoke
 from tools.git_tools import format_diff_for_review
 from state import CodeReviewState
 from utils import log
@@ -80,7 +80,7 @@ def security_review_node(state: CodeReviewState) -> dict:
     lang = _get_languages(review_files)
     prompt = SECURITY_PROMPT.replace("{language}", lang).replace("{code}", code)
 
-    text, ok = safe_invoke(prompt, temperature=0.1)
+    text, ok = timed_invoke("security", prompt, temperature=0.1)
     if not ok:
         log(f"[安全审查] 跳过（API不可用）: {text}")
         return {"security_findings": [], "agent_errors": ["security"]}

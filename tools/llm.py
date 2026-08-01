@@ -7,6 +7,7 @@ LLM 调用封装 — 统一接口，支持 DeepSeek API + 重试 + 熔断
 """
 import os
 import sys
+import threading
 import time
 from dotenv import load_dotenv
 
@@ -20,11 +21,41 @@ _RETRY_DELAY = 2.0     # 每次重试间隔（秒）
 _CIRCUIT_BREAK_THRESHOLD = 3   # 连续失败 N 次后熔断
 _CIRCUIT_COOLDOWN = 30.0       # 熔断后等待 N 秒再试
 
-# ── 熔断器状态 ──
+# ── 熔断器状态（加锁：并行 Agent 同时失败时避免竞态）──
 _circuit_state = {
     "fail_count": 0,           # 当前连续失败次数
     "open_until": 0.0,         # 熔断状态持续到哪个时间点
 }
+_circuit_lock = threading.Lock()
+
+# ── 并发限流：限制同时打到 LLM API 的请求数 ──
+# 4 个审查 Agent 并发调 API，不加控制会同时打爆 DeepSeek 限流
+LLM_MAX_CONCURRENCY = int(os.getenv("LLM_MAX_CONCURRENCY", "4"))
+_llm_semaphore = threading.Semaphore(LLM_MAX_CONCURRENCY)
+
+# ── Prometheus 指标埋点（缺 prometheus_client 时自动降级，不影响功能）──
+try:
+    from monitoring import LLM_CALLS, LLM_CIRCUIT_BREAKER, AGENT_CALLS, AGENT_LATENCY
+except Exception:
+    LLM_CALLS = LLM_CIRCUIT_BREAKER = AGENT_CALLS = AGENT_LATENCY = None
+
+
+def _metric_inc(counter, **labels):
+    """指标自增（指标未初始化时静默跳过）"""
+    if counter is not None:
+        counter.labels(**labels).inc()
+
+
+def _metric_set(gauge, value):
+    """指标赋值（指标未初始化时静默跳过）"""
+    if gauge is not None:
+        gauge.set(value)
+
+
+def _metric_observe(hist, agent_name, value):
+    """直方图观测（指标未初始化时静默跳过）"""
+    if hist is not None:
+        hist.labels(agent=agent_name).observe(value)
 
 
 def _circuit_breaker():
@@ -38,28 +69,29 @@ def _circuit_breaker():
     """
     now = time.time()
 
-    # 熔断中
-    if _circuit_state["fail_count"] >= _CIRCUIT_BREAK_THRESHOLD:
-        if now < _circuit_state["open_until"]:
-            return False, f"熔断中（连续失败{_circuit_state['fail_count']}次），{int(_circuit_state['open_until'] - now)}秒后重试"
-        else:
+    # 熔断中（加锁：并行调用时读状态也要一致）
+    with _circuit_lock:
+        if _circuit_state["fail_count"] >= _CIRCUIT_BREAK_THRESHOLD:
+            if now < _circuit_state["open_until"]:
+                return False, f"熔断中（连续失败{_circuit_state['fail_count']}次），{int(_circuit_state['open_until'] - now)}秒后重试"
             # 冷却期过了，半开状态，放行一次
-            pass
 
     return True, ""
 
 
 def _record_success():
-    """调用成功 → 重置熔断器"""
-    _circuit_state["fail_count"] = 0
-    _circuit_state["open_until"] = 0.0
+    """调用成功 → 重置熔断器（加锁）"""
+    with _circuit_lock:
+        _circuit_state["fail_count"] = 0
+        _circuit_state["open_until"] = 0.0
 
 
 def _record_failure():
-    """调用失败 → 累计失败次数"""
-    _circuit_state["fail_count"] += 1
-    if _circuit_state["fail_count"] >= _CIRCUIT_BREAK_THRESHOLD:
-        _circuit_state["open_until"] = time.time() + _CIRCUIT_COOLDOWN
+    """调用失败 → 累计失败次数（加锁，避免并发自增竞态）"""
+    with _circuit_lock:
+        _circuit_state["fail_count"] += 1
+        if _circuit_state["fail_count"] >= _CIRCUIT_BREAK_THRESHOLD:
+            _circuit_state["open_until"] = time.time() + _CIRCUIT_COOLDOWN
 
 
 # ── 尝试导入 langchain_deepseek ──
@@ -106,7 +138,8 @@ def check_api_key() -> bool:
 def invoke(prompt: str, temperature: float = 0.3) -> str:
     """同步调用 LLM，返回文本（无重试）"""
     llm = get_llm(temperature=temperature)
-    resp = llm.invoke(prompt)
+    with _llm_semaphore:  # 并发限流：同时最多 LLM_MAX_CONCURRENCY 个请求
+        resp = llm.invoke(prompt)
     return resp.content if hasattr(resp, "content") else str(resp)
 
 
@@ -126,6 +159,8 @@ def safe_invoke(prompt: str, temperature: float = 0.3) -> tuple[str, bool]:
     # ── 第一步：检查熔断器 ──
     ok, msg = _circuit_breaker()
     if not ok:
+        _metric_set(LLM_CIRCUIT_BREAKER, 1)
+        _metric_inc(LLM_CALLS, status="rejected")
         return f"[LLM 服务熔断] {msg}", False
 
     # ── 第二步：调用 + 重试 ──
@@ -134,6 +169,8 @@ def safe_invoke(prompt: str, temperature: float = 0.3) -> tuple[str, bool]:
         try:
             text = invoke(prompt, temperature)
             _record_success()  # 成功了，重置熔断器
+            _metric_set(LLM_CIRCUIT_BREAKER, 0)
+            _metric_inc(LLM_CALLS, status="success")
             return text, True
         except Exception as e:
             last_error = str(e)
@@ -142,4 +179,27 @@ def safe_invoke(prompt: str, temperature: float = 0.3) -> tuple[str, bool]:
 
     # 全部失败 → 记录失败次数
     _record_failure()
+    _metric_set(LLM_CIRCUIT_BREAKER, 1)
+    _metric_inc(LLM_CALLS, status="error")
     return f"[LLM 服务不可用] 重试 {_RETRY_TIMES} 次后仍失败: {last_error}", False
+
+
+def timed_invoke(agent_name: str, prompt: str, temperature: float = 0.3) -> tuple[str, bool]:
+    """
+    带耗时埋点的 safe_invoke —— 观察各 Agent 的调用耗时和并行度。
+
+    用法：
+        text, ok = timed_invoke("security", prompt, temperature=0.1)
+
+    验证并行度：
+        一次审查总耗时 ≈ 最慢 Agent 耗时  → 真并行
+        一次审查总耗时 ≈ 各 Agent 耗时之和 → 串行
+    """
+    from utils import log
+    t0 = time.time()
+    text, ok = safe_invoke(prompt, temperature)
+    elapsed = time.time() - t0
+    _metric_inc(AGENT_CALLS, agent=agent_name, status="ok" if ok else "error")
+    _metric_observe(AGENT_LATENCY, agent_name, elapsed)
+    log(f"[{agent_name}] LLM 调用耗时 {elapsed:.1f}s, 成功={ok}")
+    return text, ok

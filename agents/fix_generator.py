@@ -2,7 +2,7 @@
 ④ 修复建议 Agent — 对每个问题生成修复代码
 ===========================================
 """
-from tools.llm import safe_invoke
+from tools.llm import timed_invoke
 from state import CodeReviewState
 from utils import log
 
@@ -54,7 +54,7 @@ def fix_generator_node(state: CodeReviewState) -> dict:
 
     prompt = FIX_PROMPT.format(findings=json.dumps(simplified, ensure_ascii=False, indent=2))
 
-    text, ok = safe_invoke(prompt, temperature=0.2)
+    text, ok = timed_invoke("fix_generator", prompt, temperature=0.2)
     if not ok:
         log(f"[修复建议] 跳过（API不可用）: {text}")
         return {"fix_suggestions": [], "agent_errors": ["fix_generator"]}
