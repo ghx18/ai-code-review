@@ -36,9 +36,9 @@ if _PROJECT_ROOT not in sys.path:
 
 warnings.filterwarnings("ignore", message="The default value of `allowed_objects`")
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse, Response
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -68,42 +68,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── 简单 IP 限流（防恶意刷接口）──
-_RATE_LIMIT = {
-    "max_requests": 20,        # 每个 IP 每分钟最多 20 次
-    "window": 60,              # 时间窗口（秒）
-    "records": {},             # {ip: [timestamps]}
-}
-
-
-@app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    # 静态文件和健康检查不限流
-    path = request.url.path
-    if path in ("/health", "/static", "/") or path.startswith("/static/"):
-        return await call_next(request)
-
-    ip = request.client.host
-    now = time.time()
-    window = _RATE_LIMIT["window"]
-    max_req = _RATE_LIMIT["max_requests"]
-
-    # 清理过期记录
-    timestamps = _RATE_LIMIT["records"].get(ip, [])
-    timestamps = [t for t in timestamps if now - t < window]
-    _RATE_LIMIT["records"][ip] = timestamps
-
-    if len(timestamps) >= max_req:
-        return JSONResponse(
-            status_code=429,
-            content={
-                "error": "请求过于频繁，请稍后再试",
-                "message": f"每分钟最多 {max_req} 次请求",
-            },
-        )
-
-    _RATE_LIMIT["records"][ip].append(now)
-    return await call_next(request)
+# ── 限流已迁移到 nginx（limit_req，真实 IP + 共享内存 + 有界）──
+# 这里不再放 app 级 IP 限流：
+#   1. 反代后 client.host 全是 127.0.0.1，所有用户挤一个桶（误伤）
+#   2. 进程内 dict 只进不出，会无限膨胀（内存泄漏）
+#   3. 多进程各有各的 dict，分散打就绕过
+# nginx 已在 /api 上做 limit_req，职责唯一，这里删掉避免双限流打架。
 
 # ── 静态文件（前端页面）──
 app.mount("/static", StaticFiles(directory="static"), name="static")
