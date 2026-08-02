@@ -45,6 +45,7 @@ from pydantic import BaseModel, Field
 from database import init_db, save_review, get_review, list_reviews, delete_review
 from graph import run_review
 from monitoring import metrics_endpoint, API_REQUESTS, API_LATENCY, REVIEW_TOTAL, REVIEW_LATENCY, REVIEW_ISSUES
+from tools.git_tools import path_is_within_root
 
 # ── 启动时初始化数据库 ──
 init_db()
@@ -242,6 +243,13 @@ async def start_review(req: ReviewRequest):
         raise HTTPException(
             status_code=400,
             detail=f"不支持的 input_type: {req.input_type}，可选: git_diff / file / directory",
+        )
+
+    # 文件/目录模式只允许项目内路径，防止外部用户通过接口读服务器敏感文件
+    if req.input_type in ("file", "directory") and not path_is_within_root(req.input_path, _PROJECT_ROOT):
+        raise HTTPException(
+            status_code=400,
+            detail=f"只允许审查项目目录内的路径: {req.input_path}",
         )
 
     result, elapsed, review_id = await asyncio.to_thread(
@@ -462,6 +470,14 @@ async def review_websocket(websocket: WebSocket):
             await websocket.send_json({
                 "type": "error",
                 "message": f"不支持的 input_type: {input_type}，可选: git_diff / file / directory",
+            })
+            return
+
+        # 文件/目录模式只允许项目内路径，防止外部用户通过接口读服务器敏感文件
+        if input_type in ("file", "directory") and not path_is_within_root(input_path, _PROJECT_ROOT):
+            await websocket.send_json({
+                "type": "error",
+                "message": f"只允许审查项目目录内的路径: {input_path}",
             })
             return
 

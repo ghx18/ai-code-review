@@ -27,7 +27,6 @@ import os
 import sys
 import time
 import warnings
-from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -44,6 +43,7 @@ from mcp.server.fastmcp import FastMCP
 
 from database import init_db, save_review, get_review, list_reviews, delete_review
 from graph import run_review
+from tools.git_tools import path_is_within_root
 
 # ── 启动时初始化数据库 ──
 init_db()
@@ -139,13 +139,9 @@ def _is_within_project(path: str) -> bool:
     路径边界：只允许审查项目根目录内的文件/目录。
 
     防止 AI 被诱导读取服务器任意路径（如 /etc/passwd、/root/.ssh）。
+    复用 tools/git_tools.path_is_within_root。
     """
-    try:
-        p = Path(path).resolve()
-        root = Path(_PROJECT_ROOT).resolve()
-        return p == root or root in p.parents
-    except Exception:
-        return False
+    return path_is_within_root(path, _PROJECT_ROOT)
 
 
 @mcp.tool(description="审查 git 最新变更（默认 HEAD，可指定分支或 commit）")

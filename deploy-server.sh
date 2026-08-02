@@ -3,7 +3,7 @@
 echo "📥 拉取最新代码..."
 git pull origin main
 
-echo "🔄 重启服务..."
-docker compose restart api worker
+echo "🔄 重建服务（up -d 才会应用端口变更，restart 不会）..."
+docker compose up -d api worker
 
 echo "✅ 部署完成！http://124.222.1.136"

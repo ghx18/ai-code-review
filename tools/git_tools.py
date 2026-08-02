@@ -125,6 +125,16 @@ def should_skip_file(filepath: str) -> bool:
     return False
 
 
+def path_is_within_root(path: str, root: str) -> bool:
+    """判断 path 是否在 root 目录内（用于给审查工具划边界，防止读项目外的文件）"""
+    try:
+        p = Path(path).resolve()
+        r = Path(root).resolve()
+        return p == r or r in p.parents
+    except Exception:
+        return False
+
+
 def _run_git(args: list, timeout: int = 30) -> str:
     """
     安全执行 git 命令，处理 Windows GBK 编码问题
