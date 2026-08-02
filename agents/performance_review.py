@@ -2,7 +2,7 @@
 ② 性能审查 Agent — 慢查询、不必要的循环、缓存等（多语言）
 ===========================================================
 """
-from tools.llm import timed_invoke
+from tools.llm import timed_invoke, extract_json_array
 from tools.git_tools import format_diff_for_review
 from state import CodeReviewState
 from utils import log
@@ -60,8 +60,6 @@ PERFORMANCE_PROMPT = """你是一个资深性能优化工程师，负责性能�
 
 def performance_review_node(state: CodeReviewState) -> dict:
     """性能审查 Agent 节点"""
-    import json, re
-
     files = state.get("files_changed", [])
     if not files:
         return {"performance_findings": []}
@@ -85,12 +83,9 @@ def performance_review_node(state: CodeReviewState) -> dict:
         log(f"[性能审查] 跳过（API不可用）: {text}")
         return {"performance_findings": [], "agent_errors": ["performance"]}
 
-    json_match = re.search(r'\[.*\]', text, re.DOTALL)
-    if json_match:
-        try:
-            findings = json.loads(json_match.group())
-            return {"performance_findings": findings}
-        except json.JSONDecodeError as e:
-            log(f"[性能审查] JSON 解析失败: {e}")
-            return {"performance_findings": []}
-    return {"performance_findings": []}
+    # 提取 JSON（稳健版：忽略尾部废话；解析失败记入 agent_errors，不静默吞掉）
+    findings, parse_error = extract_json_array(text)
+    if parse_error:
+        log(f"[性能审查] 响应解析失败: {parse_error}，原始响应前200字符: {text[:200]}")
+        return {"performance_findings": [], "agent_errors": ["performance"]}
+    return {"performance_findings": findings}

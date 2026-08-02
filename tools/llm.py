@@ -30,7 +30,7 @@ _circuit_lock = threading.Lock()
 
 # ── 并发限流：限制同时打到 LLM API 的请求数 ──
 # 4 个审查 Agent 并发调 API，不加控制会同时打爆 DeepSeek 限流
-LLM_MAX_CONCURRENCY = int(os.getenv("LLM_MAX_CONCURRENCY", "4"))
+LLM_MAX_CONCURRENCY = int(os.getenv("LLM_MAX_CONCURRENCY", "16"))
 _llm_semaphore = threading.Semaphore(LLM_MAX_CONCURRENCY)
 
 # ── Prometheus 指标埋点（缺 prometheus_client 时自动降级，不影响功能）──
@@ -203,3 +203,53 @@ def timed_invoke(agent_name: str, prompt: str, temperature: float = 0.3) -> tupl
     _metric_observe(AGENT_LATENCY, agent_name, elapsed)
     log(f"[{agent_name}] LLM 调用耗时 {elapsed:.1f}s, 成功={ok}")
     return text, ok
+
+
+def extract_json_array(text: str) -> tuple:
+    """
+    从 LLM 响应文本中稳健提取 JSON 数组。
+
+    替代原来脆弱的 re.search(r'\\[.*\\]', text)：
+    - 原来的正则从第一个 [ 贪心吃到最后一个 ]，LLM 在数组后面补一句
+      带 [ ] 的话（如 "[仅供参考]"）就会把尾巴吞进 JSON → 解析失败；
+    - 本函数用 json.JSONDecoder.raw_decode 只解析"第一个合法 JSON 值"，
+      天然忽略数组后面的任何废话；
+    - 同时剥掉 ```json ... ``` markdown 代码围栏。
+
+    关键设计：解析失败返回 (None, 错误描述)，由调用方决定怎么处理
+    （应当记入 agent_errors 让报告显示"结果可能不完整"，而不是静默返回空数组
+    把"审查失败"伪装成"没问题"）。
+
+    用法:
+        data, err = extract_json_array(text)
+        if err:
+            return {"security_findings": [], "agent_errors": ["security"]}
+        return {"security_findings": data}
+
+    返回:
+        (list, None)  成功（data 一定是 list，空数组 [] 也是合法结果）
+        (None, str)   失败，str 是错误描述
+    """
+    import json, re
+
+    if not text or not text.strip():
+        return None, "LLM 返回空响应"
+
+    t = text.strip()
+    # 剥掉 ```json ... ``` markdown 代码围栏
+    if t.startswith("```"):
+        t = re.sub(r"^```[a-zA-Z]*\s*", "", t)
+        t = re.sub(r"\s*```$", "", t)
+
+    # 从头扫描，在第一个 [ 或 { 处用 raw_decode 只解析第一个合法 JSON 值
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(t):
+        if ch in "[{":
+            try:
+                data, _ = decoder.raw_decode(t[i:])
+            except json.JSONDecodeError:
+                continue  # 这个位置的 [ 或 { 不是合法 JSON 开头，继续往后找
+            if isinstance(data, list):
+                return data, None
+            return None, "响应中的 JSON 不是数组（可能是对象或单个值）"
+    return None, "响应中没有找到 JSON"

@@ -2,7 +2,7 @@
 ④ 修复建议 Agent — 对每个问题生成修复代码
 ===========================================
 """
-from tools.llm import timed_invoke
+from tools.llm import timed_invoke, extract_json_array
 from state import CodeReviewState
 from utils import log
 
@@ -29,7 +29,7 @@ FIX_PROMPT = """你是一个自动代码修复专家。根据以下代码审查�
 
 def fix_generator_node(state: CodeReviewState) -> dict:
     """修复建议 Agent 节点"""
-    import json, re
+    import json
 
     findings = state.get("aggregated_findings", [])
     if not findings:
@@ -59,12 +59,9 @@ def fix_generator_node(state: CodeReviewState) -> dict:
         log(f"[修复建议] 跳过（API不可用）: {text}")
         return {"fix_suggestions": [], "agent_errors": ["fix_generator"]}
 
-    json_match = re.search(r'\[.*\]', text, re.DOTALL)
-    if json_match:
-        try:
-            suggestions = json.loads(json_match.group())
-            return {"fix_suggestions": suggestions}
-        except json.JSONDecodeError as e:
-            log(f"[修复建议] JSON 解析失败: {e}")
-            return {"fix_suggestions": []}
-    return {"fix_suggestions": []}
+    # 提取 JSON（稳健版：忽略尾部废话；解析失败记入 agent_errors，不静默吞掉）
+    suggestions, parse_error = extract_json_array(text)
+    if parse_error:
+        log(f"[修复建议] 响应解析失败: {parse_error}，原始响应前200字符: {text[:200]}")
+        return {"fix_suggestions": [], "agent_errors": ["fix_generator"]}
+    return {"fix_suggestions": suggestions}

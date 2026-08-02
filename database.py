@@ -89,6 +89,20 @@ class FixSuggestionRecord(Base):
     review = relationship("ReviewRecord", back_populates="fix_suggestions")
 
 
+class TaskRecord(Base):
+    """异步任务注册表：记录 API 提交过的 Celery 任务
+
+    作用：Celery 对不存在的 task_id 也返回 PENDING（"排队中"），
+    不落库就无法区分"任务不存在"和"任务真在排队"。
+    """
+    __tablename__ = "tasks"
+
+    task_id = Column(String(64), primary_key=True)
+    input_type = Column(String(50), nullable=False)
+    input_path = Column(String(500), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 # ── 初始化与 Session ──
 
 def init_db():
@@ -225,6 +239,40 @@ def delete_review(review_id: int) -> bool:
     except Exception:
         session.rollback()
         raise
+    finally:
+        session.close()
+
+
+def save_task(task_id: str, input_type: str, input_path: str):
+    """记录一个已提交的异步审查任务（task 注册表）
+
+    让 GET /api/tasks/{id} 能区分"任务不存在"和"任务在排队"。
+    """
+    session = next(get_session())
+    try:
+        record = TaskRecord(task_id=task_id, input_type=input_type, input_path=input_path)
+        session.add(record)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def get_task(task_id: str) -> dict | None:
+    """查询已提交的任务记录，不存在返回 None"""
+    session = next(get_session())
+    try:
+        record = session.query(TaskRecord).filter(TaskRecord.task_id == task_id).first()
+        if not record:
+            return None
+        return {
+            "task_id": record.task_id,
+            "input_type": record.input_type,
+            "input_path": record.input_path,
+            "created_at": record.created_at.timestamp() if record.created_at else 0.0,
+        }
     finally:
         session.close()
 

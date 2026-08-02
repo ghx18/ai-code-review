@@ -40,8 +40,42 @@ celery_app.conf.update(
     result_expires=3600 * 24 * 7,            # 结果保留 7 天
 )
 
+# ── 重试策略：只对瞬时错误重试，并指数退避 ──
+# 永久错误（认证失败、参数非法、代码 bug）重试多少次都一样失败，
+# 而每次重试都会重新跑整轮审查（4 个 Agent × 多次 LLM 调用），纯烧钱。
+_TRANSIENT_KEYWORDS = (
+    "rate limit", "rate_limit", "too many requests", "429",
+    "timeout", "timed out", "temporarily", "connection",
+    "502", "503", "504", "server error",
+)
+_PERMANENT_KEYWORDS = (
+    "401", "403", "auth", "unauthorized", "invalid api key",
+    "invalid key", "forbidden", "not authorized",
+)
 
-@celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
+
+def _is_retryable_error(exc: Exception) -> bool:
+    """
+    判断错误是否值得重试：
+    - 瞬时错误（限流/超时/网络抖动）→ 重试有意义
+    - 永久错误（认证失败、参数错误、代码 bug）→ 重试等于烧钱
+    """
+    msg = str(exc).lower()
+    for kw in _PERMANENT_KEYWORDS:
+        if kw in msg:
+            return False
+    for kw in _TRANSIENT_KEYWORDS:
+        if kw in msg:
+            return True
+    return False
+
+
+def _retry_backoff(retries: int) -> int:
+    """指数退避：第 1 次重试等 5s，第 2 次等 10s，最多 60s"""
+    return min(5 * (2 ** retries), 60)
+
+
+@celery_app.task(bind=True, max_retries=2)
 def review_task(self, input_type: str, input_path: str) -> dict:
     """
     异步执行代码审查。
@@ -71,52 +105,83 @@ def review_task(self, input_type: str, input_path: str) -> dict:
         start = time.time()
         result = run_review(input_type, input_path)
         elapsed = time.time() - start
-
-        self.update_state(
-            state="PROGRESS",
-            meta={"progress": 70, "message": "审查完成，正在保存结果..."},
-        )
-
-        # 保存到数据库
-        try:
-            review_id = db_save(
-                input_type=input_type,
-                input_path=input_path,
-                summary=result.get("summary", ""),
-                report=result.get("report", ""),
-                stats=result.get("stats", {}),
-                status="completed" if not result.get("error") else "failed",
-                error=result.get("error", ""),
-                total_files=result.get("total_files", 0),
-                elapsed_seconds=elapsed,
-                findings=result.get("aggregated_findings", []),
-                fix_suggestions=result.get("fix_suggestions", []),
-            )
-        except Exception as exc:
-            review_id = None
-
-        self.update_state(
-            state="PROGRESS",
-            meta={"progress": 100, "message": "已完成"},
-        )
-
-        return {
-            "review_id": review_id,
-            "status": "completed" if not result.get("error") else "failed",
-            "summary": result.get("summary", ""),
-            "stats": result.get("stats", {}),
-            "total_files": result.get("total_files", 0),
-            "elapsed_seconds": round(elapsed, 2),
-            "report": result.get("report", ""),
-            "error": result.get("error") if result.get("error") else None,
-        }
-
     except Exception as exc:
+        if not _is_retryable_error(exc):
+            # 永久错误（认证失败、代码 bug 等）：不重试，直接失败
+            self.update_state(
+                state="FAILURE",
+                meta={"progress": 0, "message": f"不可重试的错误: {exc}"},
+            )
+            raise
+        # 瞬时错误（限流/超时/网络）：指数退避重试
+        countdown = _retry_backoff(self.request.retries)
         self.update_state(
             state="FAILURE",
-            meta={"progress": 0, "message": f"审查异常: {exc}"},
+            meta={"progress": 0, "message": f"瞬时错误，{countdown}s 后自动重试: {exc}"},
         )
-        raise self.retry(exc=exc)
+        raise self.retry(exc=exc, countdown=countdown)
+
+    # run_review 通常不抛异常，而是把错误吞进 state（如文件不存在）
+    # 这里也要捞出来分类：瞬时错误→重试；永久错误→不重试，但要"响亮"地失败
+    if result.get("error"):
+        err = result["error"]
+        if _is_retryable_error(Exception(err)):
+            countdown = _retry_backoff(self.request.retries)
+            self.update_state(
+                state="FAILURE",
+                meta={"progress": 0, "message": f"瞬时错误，{countdown}s 后自动重试: {err}"},
+            )
+            raise self.retry(exc=Exception(err), countdown=countdown)
+        # 永久错误（输入不合法等）：不重试，返回清晰的失败结果
+        return {
+            "review_id": None,
+            "status": "failed",
+            "summary": "",
+            "stats": {},
+            "total_files": 0,
+            "elapsed_seconds": round(elapsed, 2),
+            "report": result.get("report", ""),
+            "error": err,
+        }
+
+    self.update_state(
+        state="PROGRESS",
+        meta={"progress": 70, "message": "审查完成，正在保存结果..."},
+    )
+
+    # 保存到数据库
+    try:
+        review_id = db_save(
+            input_type=input_type,
+            input_path=input_path,
+            summary=result.get("summary", ""),
+            report=result.get("report", ""),
+            stats=result.get("stats", {}),
+            status="completed" if not result.get("error") else "failed",
+            error=result.get("error", ""),
+            total_files=result.get("total_files", 0),
+            elapsed_seconds=elapsed,
+            findings=result.get("aggregated_findings", []),
+            fix_suggestions=result.get("fix_suggestions", []),
+        )
+    except Exception as exc:
+        review_id = None
+
+    self.update_state(
+        state="PROGRESS",
+        meta={"progress": 100, "message": "已完成"},
+    )
+
+    return {
+        "review_id": review_id,
+        "status": "completed" if not result.get("error") else "failed",
+        "summary": result.get("summary", ""),
+        "stats": result.get("stats", {}),
+        "total_files": result.get("total_files", 0),
+        "elapsed_seconds": round(elapsed, 2),
+        "report": result.get("report", ""),
+        "error": result.get("error") if result.get("error") else None,
+    }
 
 
 def get_task_result(task_id: str) -> dict:
@@ -154,15 +219,29 @@ def get_task_result(task_id: str) -> dict:
         }
 
     if task.state == "SUCCESS":
-        return {**base, "progress": 100, "message": "已完成", "result": task.result, "error": None}
+        payload = task.result
+        # 审查失败的结果要"响亮"地暴露，不能返回 error=None 让前端以为成功了
+        if isinstance(payload, dict) and payload.get("error"):
+            return {
+                **base,
+                "progress": 100,
+                "message": "已完成",
+                "result": payload,
+                "error": payload.get("error"),
+            }
+        return {**base, "progress": 100, "message": "已完成", "result": payload, "error": None}
 
     if task.state == "FAILURE":
+        # task.info 是 ExceptionInfo(type, value, traceback)，提取 .value 拿到干净的错误信息
+        error = "未知错误"
+        if task.info:
+            error = str(getattr(task.info, "value", None) or task.info)
         return {
             **base,
             "progress": 0,
             "message": "任务失败",
             "result": None,
-            "error": str(task.info) if task.info else "未知错误",
+            "error": error,
         }
 
     # STARTED / RETRY 等中间状态

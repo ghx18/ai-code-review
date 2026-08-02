@@ -2,7 +2,7 @@
 ② 安全审查 Agent — SQL注入、XSS、敏感信息泄露等（多语言）
 ===========================================================
 """
-from tools.llm import timed_invoke
+from tools.llm import timed_invoke, extract_json_array
 from tools.git_tools import format_diff_for_review
 from state import CodeReviewState
 from utils import log
@@ -59,8 +59,6 @@ SECURITY_PROMPT = """你是一个资深安全工程师，负责安全审查。
 
 def security_review_node(state: CodeReviewState) -> dict:
     """安全审查 Agent 节点"""
-    import json, re
-
     files = state.get("files_changed", [])
     if not files:
         return {"security_findings": []}
@@ -85,13 +83,9 @@ def security_review_node(state: CodeReviewState) -> dict:
         log(f"[安全审查] 跳过（API不可用）: {text}")
         return {"security_findings": [], "agent_errors": ["security"]}
 
-    # 提取 JSON
-    json_match = re.search(r'\[.*\]', text, re.DOTALL)
-    if json_match:
-        try:
-            findings = json.loads(json_match.group())
-            return {"security_findings": findings}
-        except json.JSONDecodeError as e:
-            log(f"[安全审查] JSON 解析失败: {e}，原始响应前200字符: {text[:200]}")
-            return {"security_findings": []}
-    return {"security_findings": []}
+    # 提取 JSON（稳健版：忽略尾部废话；解析失败记入 agent_errors，不静默吞掉）
+    findings, parse_error = extract_json_array(text)
+    if parse_error:
+        log(f"[安全审查] 响应解析失败: {parse_error}，原始响应前200字符: {text[:200]}")
+        return {"security_findings": [], "agent_errors": ["security"]}
+    return {"security_findings": findings}

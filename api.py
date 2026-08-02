@@ -311,6 +311,7 @@ async def start_review_async(req: ReviewRequest):
     用返回的 task_id 轮询 GET /api/tasks/{task_id} 获取结果。
     """
     from celery_app import review_task as rt
+    from database import save_task
 
     if req.input_type not in ("git_diff", "file", "directory"):
         raise HTTPException(
@@ -319,6 +320,14 @@ async def start_review_async(req: ReviewRequest):
         )
 
     task = rt.delay(req.input_type, req.input_path)
+
+    # 落库：让 GET /api/tasks/{id} 能区分"任务不存在"和"任务在排队"
+    #（否则 Celery 对不存在的 task_id 也返回 PENDING，前端会一直误以为在排队）
+    try:
+        save_task(task.id, req.input_type, req.input_path)
+    except Exception:
+        pass  # 落库失败不阻塞任务提交
+
     return {
         "task_id": task.id,
         "status": "pending",
@@ -335,11 +344,23 @@ async def get_task_status(task_id: str):
         PENDING → PROGRESS → SUCCESS / FAILURE
     """
     from celery_app import get_task_result
+    from database import get_task
+
+    # 先查注册表：没提交过的 task_id 直接 404
+    #（否则 Celery 对不存在的任务也返回 PENDING，用户会误以为"排队中"）
+    record = get_task(task_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
 
     try:
         result = get_task_result(task_id)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"无效的 task_id: {e}")
+
+    # 结果 7 天过期（celery_app.result_expires）。过期后 Celery 也返回 PENDING，
+    # 需要按注册表里的创建时间区分"真在排队" vs "结果已过期"
+    if result.get("state") == "PENDING" and time.time() - record["created_at"] > 7 * 24 * 3600:
+        result = {**result, "state": "EXPIRED", "message": "任务结果已过期（保留 7 天），请重新提交"}
 
     return result
 
