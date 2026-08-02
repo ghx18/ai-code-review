@@ -27,6 +27,7 @@ import os
 import sys
 import time
 import warnings
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -133,6 +134,20 @@ def _do_review(input_type: str, input_path: str) -> str:
 #  MCP Tools
 # ═══════════════════════════════════════════════════════════
 
+def _is_within_project(path: str) -> bool:
+    """
+    路径边界：只允许审查项目根目录内的文件/目录。
+
+    防止 AI 被诱导读取服务器任意路径（如 /etc/passwd、/root/.ssh）。
+    """
+    try:
+        p = Path(path).resolve()
+        root = Path(_PROJECT_ROOT).resolve()
+        return p == root or root in p.parents
+    except Exception:
+        return False
+
+
 @mcp.tool(description="审查 git 最新变更（默认 HEAD，可指定分支或 commit）")
 def review_git_diff(ref: str = "HEAD") -> str:
     """
@@ -146,7 +161,7 @@ def review_git_diff(ref: str = "HEAD") -> str:
     return _do_review("git_diff", ref)
 
 
-@mcp.tool(description="审查单个文件")
+@mcp.tool(description="审查单个文件（只允许项目内的文件）")
 def review_file(file_path: str) -> str:
     """
     审查指定文件的内容。
@@ -156,10 +171,12 @@ def review_file(file_path: str) -> str:
     返回:
         Markdown 格式的审查报告
     """
+    if not _is_within_project(file_path):
+        return f"❌ 只允许审查项目目录内的文件（项目根: {_PROJECT_ROOT}），拒绝: {file_path}"
     return _do_review("file", file_path)
 
 
-@mcp.tool(description="审查整个目录下的所有代码文件")
+@mcp.tool(description="审查整个目录下的所有代码文件（只允许项目内的目录）")
 def review_directory(dir_path: str) -> str:
     """
     审查目录下所有代码文件。
@@ -169,6 +186,8 @@ def review_directory(dir_path: str) -> str:
     返回:
         Markdown 格式的审查报告
     """
+    if not _is_within_project(dir_path):
+        return f"❌ 只允许审查项目目录内的目录（项目根: {_PROJECT_ROOT}），拒绝: {dir_path}"
     return _do_review("directory", dir_path)
 
 

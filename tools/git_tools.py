@@ -69,6 +69,18 @@ SKIP_EXTENSIONS = {
     ".map",
 }
 
+# ── 敏感文件黑名单：这些文件一律拒绝审查，防止密钥/凭据泄露进 LLM ──
+SENSITIVE_FILES = {
+    ".env", ".env.local", ".env.production", ".env.development", ".env.example",
+    "id_rsa", "id_rsa.pub", "id_dsa", "id_ecdsa", "id_ed25519",
+    "credentials", "credentials.json", "secrets", "secret", "password",
+    ".htpasswd", ".netrc",
+}
+SENSITIVE_EXTENSIONS = {
+    ".env", ".pem", ".key", ".p12", ".pfx", ".cer", ".crt",
+    ".gpg", ".asc", ".p8", ".jks", ".keystore",
+}
+
 
 def get_file_language(filepath: str) -> str:
     """根据文件扩展名判断语言"""
@@ -87,6 +99,13 @@ def get_file_language(filepath: str) -> str:
 def should_skip_file(filepath: str) -> bool:
     """判断文件是否应该跳过审查"""
     ext = os.path.splitext(filepath)[1].lower()
+    basename = os.path.basename(filepath).lower()
+
+    # 敏感文件（密钥/证书/凭据等）：拒绝审查，防止泄露进 LLM
+    if basename in SENSITIVE_FILES:
+        return True
+    if ext in SENSITIVE_EXTENSIONS:
+        return True
 
     # 二进制/生成文件
     if ext in SKIP_EXTENSIONS:
@@ -338,6 +357,30 @@ def truncate_content(text: str, max_tokens: int = 4000, file_label: str = "") ->
     return truncated + warning
 
 
+# ── 敏感信息脱敏：进 LLM 提示词前，把密钥/口令/Token 打码 ──
+_SECRET_PATTERNS = [
+    # OpenAI / DeepSeek 风格密钥：sk-xxx
+    (re.compile(r"sk-[A-Za-z0-9_\-]{8,}"), "sk-***"),
+    # AWS Access Key
+    (re.compile(r"AKIA[0-9A-Z]{16}"), "AKIA***"),
+    # 常见赋值（带引号）：password = "xxx"
+    (re.compile(r"(?i)(password|passwd|secret|api[_-]?key|token|pwd|auth[_-]?token)\s*[=:]\s*['\"][^'\"]{4,}['\"]"),
+     r"\1 = '***'"),
+    # 常见赋值（不带引号）：API_KEY=xxx
+    (re.compile(r"(?i)(password|passwd|secret|api[_-]?key|token|pwd|auth[_-]?token)\s*[=:]\s*[A-Za-z0-9_\-\.\/\+\=\$]{8,}"),
+     r"\1 = ***"),
+]
+
+
+def mask_secrets(text: str) -> str:
+    """把文本里的密钥/口令/Token 打码，防止它们被原样喂进 LLM 提示词"""
+    if not text:
+        return text
+    for pattern, repl in _SECRET_PATTERNS:
+        text = pattern.sub(repl, text)
+    return text
+
+
 def format_diff_for_review(files: list, max_tokens: int = 6000) -> str:
     """
     将 FileChange 列表格式化为 LLM 能理解的文本。
@@ -362,15 +405,17 @@ def format_diff_for_review(files: list, max_tokens: int = 6000) -> str:
             parts.append("（文件已被删除）\n")
             continue
 
-        # 优先用 diff 内容，没有则用完整内容
+        # 优先用 diff 内容，没有则用完整内容（都要先脱敏再进 LLM）
         if f.get("diff_content"):
             code = f["diff_content"]
+            code = mask_secrets(code)
             code = truncate_content(code, max_tokens // len(files), fpath)
             parts.append("```diff")
             parts.append(code)
             parts.append("```")
         elif f.get("content"):
             code = f["content"]
+            code = mask_secrets(code)
             code = truncate_content(code, max_tokens // len(files), fpath)
             parts.append(f"```{lang}")
             parts.append(code)

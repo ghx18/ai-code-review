@@ -46,7 +46,7 @@ def router_after_aggregator(state: CodeReviewState) -> str:
     return "no_findings"
 
 
-def build_graph():
+def build_graph(progress_callback=None):
     """
     LangGraph 图结构：
 
@@ -70,19 +70,31 @@ def build_graph():
                                             report_generator
                                                 │
                                                 END
+
+    progress_callback: 可选。每个节点执行完后被调用（参数=节点名），用于实时进度。
     """
+    def _wrap(name, node_fn):
+        """节点包装器：节点执行完后上报进度"""
+        if progress_callback is None:
+            return node_fn
+        def wrapped(state):
+            result = node_fn(state)
+            progress_callback(name)
+            return result
+        return wrapped
+
     builder = StateGraph(CodeReviewState)
 
-    # ── 添加所有节点 ──
-    builder.add_node("diff_analyzer", diff_analyzer_node)
+    # ── 添加所有节点（包一层进度上报）──
+    builder.add_node("diff_analyzer", _wrap("diff_analyzer", diff_analyzer_node))
     builder.add_node("fan_out", fan_out_node)
-    builder.add_node("security_review", security_review_node)
-    builder.add_node("performance_review", performance_review_node)
-    builder.add_node("style_review", style_review_node)
-    builder.add_node("logic_review", logic_review_node)
-    builder.add_node("aggregator", aggregator_node)
-    builder.add_node("fix_generator", fix_generator_node)
-    builder.add_node("report_generator", report_generator_node)
+    builder.add_node("security_review", _wrap("security_review", security_review_node))
+    builder.add_node("performance_review", _wrap("performance_review", performance_review_node))
+    builder.add_node("style_review", _wrap("style_review", style_review_node))
+    builder.add_node("logic_review", _wrap("logic_review", logic_review_node))
+    builder.add_node("aggregator", _wrap("aggregator", aggregator_node))
+    builder.add_node("fix_generator", _wrap("fix_generator", fix_generator_node))
+    builder.add_node("report_generator", _wrap("report_generator", report_generator_node))
 
     # ── 入口 ──
     builder.set_entry_point("diff_analyzer")
@@ -136,7 +148,7 @@ def build_graph():
 BATCH_SIZE = 5  # 每批处理的文件数
 
 
-def _run_batched_review(directory: str) -> CodeReviewState:
+def _run_batched_review(directory: str, progress_callback=None) -> CodeReviewState:
     """
     分批审查目录下的所有文件。
 
@@ -162,7 +174,7 @@ def _run_batched_review(directory: str) -> CodeReviewState:
 
     total_files = len(all_files)
     num_batches = (total_files + BATCH_SIZE - 1) // BATCH_SIZE
-    graph = build_graph()
+    graph = build_graph(progress_callback)
 
     all_findings = []
     all_fixes = []
@@ -205,6 +217,8 @@ def _run_batched_review(directory: str) -> CodeReviewState:
             "review_status": "aggregating",
         }
         agg_result = aggregator_node({**empty_state(), **merge_state_for_agg})
+        if progress_callback:
+            progress_callback("aggregator")
         merged_state.update(agg_result)
         merged_state["aggregated_findings"] = agg_result.get("aggregated_findings", all_findings)
         merged_state["summary"] = agg_result.get("summary", "")
@@ -215,6 +229,8 @@ def _run_batched_review(directory: str) -> CodeReviewState:
             from agents.fix_generator import fix_generator_node
             fix_state = {**merged_state, "aggregated_findings": agg_result.get("aggregated_findings", [])}
             fix_result = fix_generator_node(fix_state)
+            if progress_callback:
+                progress_callback("fix_generator")
             merged_state["fix_suggestions"] = fix_result.get("fix_suggestions", all_fixes)
         else:
             merged_state["fix_suggestions"] = []
@@ -227,6 +243,8 @@ def _run_batched_review(directory: str) -> CodeReviewState:
     # 生成统一报告
     final_state = {**empty_state(), **merged_state}
     report_result = report_generator_node(final_state)
+    if progress_callback:
+        progress_callback("report_generator")
     merged_state["report"] = report_result.get("report", "")
     merged_state["review_status"] = "done"
 
@@ -238,13 +256,14 @@ def _run_batched_review(directory: str) -> CodeReviewState:
     return merged_state
 
 
-def run_review(input_type: str, input_path: str) -> CodeReviewState:
+def run_review(input_type: str, input_path: str, progress_callback=None) -> CodeReviewState:
     """
     运行代码审查
 
     参数:
         input_type: "git_diff" / "file" / "directory"
         input_path: 分支名 / 文件路径 / 目录路径
+        progress_callback: 可选。各节点完成后上报进度（参数=节点名）
 
     返回:
         最终 state（包含 report）
@@ -261,9 +280,9 @@ def run_review(input_type: str, input_path: str) -> CodeReviewState:
 
     # 目录 → 分批处理
     if input_type == "directory":
-        return _run_batched_review(input_path)
+        return _run_batched_review(input_path, progress_callback)
 
-    graph = build_graph()
+    graph = build_graph(progress_callback)
     initial_state = empty_state()
     initial_state["input_type"] = input_type
     initial_state["input_path"] = input_path

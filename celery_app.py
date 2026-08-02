@@ -75,6 +75,53 @@ def _retry_backoff(retries: int) -> int:
     return min(5 * (2 ** retries), 60)
 
 
+def worker_available() -> bool:
+    """
+    检查是否有可用的 Celery worker。
+
+    通过广播 ping 检测（1 秒超时）。返回空列表 = 没有 worker 在跑，
+    此时任务提交了也会永远排队，不如提前让调用方知道。
+    """
+    try:
+        # control.ping() 向所有 worker 广播，返回 [{worker_name: {'ok': 'pong'}}]
+        return bool(celery_app.control.ping(timeout=1.0))
+    except Exception:
+        # Redis 不可达等异常 → 视为不可用
+        return False
+
+
+# ── 进度阶段 → 百分比（前端进度条用，配合 graph 的 progress_callback）──
+_STAGE_PROGRESS = {
+    "diff_analyzer": 15,        # 变更分析完成
+    "security_review": 30,      # 安全审查完成
+    "performance_review": 40,   # 性能审查完成
+    "style_review": 50,         # 风格审查完成
+    "logic_review": 60,         # 逻辑审查完成
+    "aggregator": 70,           # 结果聚合完成
+    "fix_generator": 85,        # 修复建议生成完成
+    "report_generator": 95,     # 报告生成完成
+}
+_STAGE_MESSAGES = {
+    "diff_analyzer": "变更分析完成",
+    "security_review": "安全审查完成",
+    "performance_review": "性能审查完成",
+    "style_review": "风格审查完成",
+    "logic_review": "逻辑审查完成",
+    "aggregator": "结果聚合完成",
+    "fix_generator": "修复建议生成完成",
+    "report_generator": "报告生成完成",
+}
+
+
+def _make_progress_callback(task):
+    """把图节点完成事件转成 Celery 任务的真实进度更新（5→15→…→95）"""
+    def cb(stage: str):
+        pct = _STAGE_PROGRESS.get(stage, 90)
+        msg = _STAGE_MESSAGES.get(stage, "审查进行中")
+        task.update_state(state="PROGRESS", meta={"progress": pct, "message": msg})
+    return cb
+
+
 @celery_app.task(bind=True, max_retries=2)
 def review_task(self, input_type: str, input_path: str) -> dict:
     """
@@ -103,7 +150,8 @@ def review_task(self, input_type: str, input_path: str) -> dict:
 
     try:
         start = time.time()
-        result = run_review(input_type, input_path)
+        # 传入进度回调：run_review 每个节点完成后上报真实进度
+        result = run_review(input_type, input_path, progress_callback=_make_progress_callback(self))
         elapsed = time.time() - start
     except Exception as exc:
         if not _is_retryable_error(exc):
@@ -142,11 +190,12 @@ def review_task(self, input_type: str, input_path: str) -> dict:
             "elapsed_seconds": round(elapsed, 2),
             "report": result.get("report", ""),
             "error": err,
+            "fix_suggestions": [],
         }
 
     self.update_state(
         state="PROGRESS",
-        meta={"progress": 70, "message": "审查完成，正在保存结果..."},
+        meta={"progress": 98, "message": "审查完成，正在保存结果..."},
     )
 
     # 保存到数据库
@@ -181,6 +230,7 @@ def review_task(self, input_type: str, input_path: str) -> dict:
         "elapsed_seconds": round(elapsed, 2),
         "report": result.get("report", ""),
         "error": result.get("error") if result.get("error") else None,
+        "fix_suggestions": result.get("fix_suggestions", []),
     }
 
 

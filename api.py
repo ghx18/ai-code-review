@@ -17,7 +17,6 @@ AI Code Review 的统一 HTTP 服务层。
 Docker 中默认使用此入口。
 """
 import asyncio
-import concurrent.futures
 import os
 import sys
 import time
@@ -310,13 +309,20 @@ async def start_review_async(req: ReviewRequest):
 
     用返回的 task_id 轮询 GET /api/tasks/{task_id} 获取结果。
     """
-    from celery_app import review_task as rt
+    from celery_app import review_task as rt, worker_available
     from database import save_task
 
     if req.input_type not in ("git_diff", "file", "directory"):
         raise HTTPException(
             status_code=400,
             detail=f"不支持的 input_type: {req.input_type}，可选: git_diff / file / directory",
+        )
+
+    # 没有 worker 的话任务永远排队，直接 503，别让客户端干等
+    if not worker_available():
+        raise HTTPException(
+            status_code=503,
+            detail="没有可用的 Celery worker（或 Redis 不可达），任务无法执行，请稍后再试",
         )
 
     task = rt.delay(req.input_type, req.input_path)
@@ -420,19 +426,26 @@ async def get_stats():
 #  WebSocket — 实时审查推送
 # ═══════════════════════════════════════════════════════════
 
+# 任务提交后超过这么久还停留在"排队中"，判定 worker 不可用，给用户报错而不是无限等
+_WS_STUCK_AFTER_SECONDS = 120
+
+
 @app.websocket("/ws/review")
 async def review_websocket(websocket: WebSocket):
     """
-    WebSocket 实时审查。
+    WebSocket 实时审查 — 基于 Celery 异步任务。
 
     客户端发送 JSON:
         {"input_type": "git_diff", "input_path": "HEAD"}
 
     服务端推送:
-        {"type": "progress", "message": "..."}  — 进度更新
-        {"type": "result", ...}                  — 最终结果
-        {"type": "error", "message": "..."}      — 错误信息
+        {"type": "progress", "message": "...", "progress": N}  — 任务真实进度
+        {"type": "result", ...}                               — 最终结果
+        {"type": "error", "message": "..."}                   — 错误信息
     """
+    from celery_app import review_task as rt, get_task_result, worker_available
+    from database import save_task
+
     await websocket.accept()
     try:
         data = await websocket.receive_json()
@@ -445,56 +458,91 @@ async def review_websocket(websocket: WebSocket):
                 "message": "缺少 input_type 或 input_path",
             })
             return
+        if input_type not in ("git_diff", "file", "directory"):
+            await websocket.send_json({
+                "type": "error",
+                "message": f"不支持的 input_type: {input_type}，可选: git_diff / file / directory",
+            })
+            return
+
+        # 提交前先探活：没有 worker 的话任务永远排队，不如直接报错
+        if not worker_available():
+            await websocket.send_json({
+                "type": "error",
+                "message": "没有可用的 Celery worker（或 Redis 不可达），任务无法执行。请确认 redis 和 worker 已启动。",
+            })
+            return
+
+        # 提交到 Celery 队列（复用 worker，不再自己开线程）
+        try:
+            task = rt.delay(input_type, input_path)
+        except Exception as e:
+            await websocket.send_json({
+                "type": "error",
+                "message": f"任务提交失败（Redis 可能未运行）: {e}",
+            })
+            return
+        try:
+            save_task(task.id, input_type, input_path)
+        except Exception:
+            pass  # 落库失败不阻塞
 
         await websocket.send_json({
             "type": "progress",
-            "message": f"正在分析代码变更 ({input_type}: {input_path})...",
-            "progress": 10,
+            "message": "任务已提交，排队中...",
+            "progress": 5,
         })
 
-        # 在后台线程执行审查，同时通过 WebSocket 推送进度
-        loop = asyncio.get_event_loop()
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(_execute_review, input_type, input_path)
+        # 轮询任务状态：客户端断开只会停止轮询，worker 里的审查继续跑，不阻塞事件循环
+        start = time.time()
+        while True:
+            status = get_task_result(task.id)
+            state = status.get("state")
 
-            # 轮询进度
-            while not future.done():
+            if state == "SUCCESS":
+                payload = status.get("result") or {}
                 await websocket.send_json({
-                    "type": "progress",
-                    "message": "审查进行中（安全/性能/风格/逻辑 Agent 并行审查）...",
-                    "progress": 50,
+                    "type": "result",
+                    "review_id": payload.get("review_id"),
+                    "status": payload.get("status", "completed"),
+                    "summary": payload.get("summary", ""),
+                    "stats": payload.get("stats", {}),
+                    "total_files": payload.get("total_files", 0),
+                    "elapsed_seconds": payload.get("elapsed_seconds", 0),
+                    "report": payload.get("report", ""),
+                    "error": payload.get("error"),
+                    "fix_suggestions": payload.get("fix_suggestions", []),
                 })
-                try:
-                    await asyncio.wait_for(
-                        asyncio.wrap_future(future), timeout=3.0
-                    )
-                except asyncio.TimeoutError:
-                    continue
+                break
 
-            result, elapsed, review_id = future.result()
+            if state in ("FAILURE", "EXPIRED"):
+                await websocket.send_json({
+                    "type": "error",
+                    "message": status.get("message", "任务失败"),
+                    "error": status.get("error", "未知错误"),
+                })
+                break
 
-        is_error = bool(result.get("error"))
+            # 卡死兜底：提交后很久还在排队，多半是 worker 挂了/被卡，别再让用户无限等
+            if state == "PENDING" and time.time() - start > _WS_STUCK_AFTER_SECONDS:
+                await websocket.send_json({
+                    "type": "error",
+                    "message": "任务长时间未开始执行（可能 worker 不可用），请检查 worker 状态后重新提交。",
+                })
+                break
 
-        await websocket.send_json({
-            "type": "progress",
-            "message": "审查完成，正在生成报告...",
-            "progress": 90,
-        })
+            # 还在排队/进行中：推送 worker 上报的真实进度（5→15→…→95）
+            await websocket.send_json({
+                "type": "progress",
+                "message": f"{status.get('message', '审查进行中')}（已耗时 {int(time.time() - start)}s）",
+                "progress": status.get("progress", 5),
+            })
 
-        await websocket.send_json({
-            "type": "result",
-            "review_id": review_id,
-            "status": "failed" if is_error else "completed",
-            "summary": result.get("summary", ""),
-            "stats": result.get("stats", {}),
-            "total_files": result.get("total_files", 0),
-            "elapsed_seconds": round(elapsed, 2),
-            "report": result.get("report", ""),
-            "error": result.get("error") if is_error else None,
-            "fix_suggestions": result.get("fix_suggestions", []),
-        })
+            # 非阻塞轮询间隔 1 秒
+            await asyncio.sleep(1.0)
 
     except WebSocketDisconnect:
+        # 客户端断开：只退出轮询。Celery 任务在 worker 里继续，事件循环不受影响
         pass
     except Exception as e:
         try:

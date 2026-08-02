@@ -76,13 +76,14 @@ def _handle_single_file(filepath: str) -> dict:
     if not os.path.exists(filepath):
         return {"error": f"文件不存在: {filepath}", "review_status": "error"}
 
+    from tools.git_tools import get_file_language, should_skip_file
+    # 敏感文件（.env / 密钥等）先拦截，连读都不读，避免内容进入内存/LLM
+    if should_skip_file(filepath):
+        return {"error": f"跳过非审查文件: {filepath}", "review_status": "error"}
+
     content = read_file_content(filepath)
     if content is None:
         return {"error": f"无法读取文件（可能不是文本文件）: {filepath}", "review_status": "error"}
-
-    from tools.git_tools import get_file_language, should_skip_file
-    if should_skip_file(filepath):
-        return {"error": f"跳过非审查文件: {filepath}", "review_status": "error"}
 
     filename = os.path.basename(filepath)
     lang = get_file_language(filepath)
