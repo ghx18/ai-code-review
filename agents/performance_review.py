@@ -2,10 +2,8 @@
 ② 性能审查 Agent — 慢查询、不必要的循环、缓存等（多语言）
 ===========================================================
 """
-from tools.llm import timed_invoke, extract_json_array
-from tools.git_tools import format_diff_for_review
 from state import CodeReviewState
-from utils import log
+from agents.agent_utils import run_batched_review
 
 
 def _get_languages(files: list) -> str:
@@ -68,24 +66,15 @@ def performance_review_node(state: CodeReviewState) -> dict:
     if not review_files:
         return {"performance_findings": []}
 
-    code = format_diff_for_review(review_files, max_tokens=4000)
-    memory = state.get("_memory_context", "")
-    if memory:
-        code = memory + "\n" + code
-    if not code.strip():
-        return {"performance_findings": []}
-
     lang = _get_languages(review_files)
-    prompt = PERFORMANCE_PROMPT.replace("{language}", lang).replace("{code}", code)
+    memory = state.get("_memory_context", "")
+    # 按文件分批送 LLM（每批独立 token 预算），避免大 diff 截断丢中间段
+    findings, had_error = run_batched_review(
+        PERFORMANCE_PROMPT, review_files, "performance", lang,
+        memory_context=memory,
+    )
 
-    text, ok = timed_invoke("performance", prompt, temperature=0.1)
-    if not ok:
-        log(f"[性能审查] 跳过（API不可用）: {text}")
-        return {"performance_findings": [], "agent_errors": ["performance"]}
-
-    # 提取 JSON（稳健版：忽略尾部废话；解析失败记入 agent_errors，不静默吞掉）
-    findings, parse_error = extract_json_array(text)
-    if parse_error:
-        log(f"[性能审查] 响应解析失败: {parse_error}，原始响应前200字符: {text[:200]}")
+    # 全部批次都失败才算 Agent 不可用；部分失败保留成功批次的结果
+    if had_error and not findings:
         return {"performance_findings": [], "agent_errors": ["performance"]}
     return {"performance_findings": findings}

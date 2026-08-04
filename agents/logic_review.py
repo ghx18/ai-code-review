@@ -2,10 +2,8 @@
 ② 逻辑审查 Agent — 空指针、边界条件、并发问题等（多语言）
 ===========================================================
 """
-from tools.llm import timed_invoke, extract_json_array
-from tools.git_tools import format_diff_for_review
 from state import CodeReviewState
-from utils import log
+from agents.agent_utils import run_batched_review
 
 
 def _get_languages(files: list) -> str:
@@ -70,24 +68,15 @@ def logic_review_node(state: CodeReviewState) -> dict:
     if not review_files:
         return {"logic_findings": []}
 
-    code = format_diff_for_review(review_files, max_tokens=4000)
-    memory = state.get("_memory_context", "")
-    if memory:
-        code = memory + "\n" + code
-    if not code.strip():
-        return {"logic_findings": []}
-
     lang = _get_languages(review_files)
-    prompt = LOGIC_PROMPT.replace("{language}", lang).replace("{code}", code)
+    memory = state.get("_memory_context", "")
+    # 按文件分批送 LLM（每批独立 token 预算），避免大 diff 截断丢中间段
+    findings, had_error = run_batched_review(
+        LOGIC_PROMPT, review_files, "logic", lang,
+        memory_context=memory,
+    )
 
-    text, ok = timed_invoke("logic", prompt, temperature=0.1)
-    if not ok:
-        log(f"[逻辑审查] 跳过（API不可用）: {text}")
-        return {"logic_findings": [], "agent_errors": ["logic"]}
-
-    # 提取 JSON（稳健版：忽略尾部废话；解析失败记入 agent_errors，不静默吞掉）
-    findings, parse_error = extract_json_array(text)
-    if parse_error:
-        log(f"[逻辑审查] 响应解析失败: {parse_error}，原始响应前200字符: {text[:200]}")
+    # 全部批次都失败才算 Agent 不可用；部分失败保留成功批次的结果
+    if had_error and not findings:
         return {"logic_findings": [], "agent_errors": ["logic"]}
     return {"logic_findings": findings}
