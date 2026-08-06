@@ -60,6 +60,24 @@ REST / WebSocket ──► Celery review_task（Redis 队列）──► 完整 
 - **LLM 并发与容错** — 信号量限流（每进程 `LLM_MAX_CONCURRENCY`，默认 16）+ 熔断器 + Prometheus 指标
 - **限流在网关层** — nginx `limit_req`（api 10r/m / general 60r/m）；API 只监听 `127.0.0.1:8000`，公网不可直连
 
+## 线上部署现状
+
+已部署上线（腾讯云轻量服务器）。入口统一走 nginx（80 端口），API 容器只监听 `127.0.0.1:8000`，公网不可直连。
+
+```
+用户 ──► nginx :80（limit_req 网关限流：/api 10r/m、general 60r/m）
+              ├──► api（127.0.0.1:8000，FastAPI + WebSocket）
+              ├──► celery worker（--concurrency=4，异步审查）
+              └──► redis / postgres
+```
+
+- **访问地址**: `http://124.222.1.136`（`/health` 已验证返回 ok）
+- **安全现状**: 8000 后门已关闭（外网直连被拒，全部流量只能走 nginx 正门）；限流职责唯一归 nginx（app 旧中间件已删除）
+- **部署/更新**: 一键 `deploy.bat` —— 提交推送 Gitee → ssh 到服务器 `git pull` → `docker compose up -d api worker`
+- **更新线上流程** = 先本地提交代码，再跑 `deploy.bat`
+
+> ⚠️ 域名 ghx08.tech 备案中；备案生效前大陆访问走 IP，之后再启用 HTTPS。
+
 ## 快速开始
 
 ### 1. 安装依赖
@@ -165,7 +183,7 @@ ai-code-review/
 | 持久化 | SQLAlchemy + SQLite / PostgreSQL |
 | LLM | DeepSeek API |
 | 安全 | 敏感文件黑名单 / 内容脱敏 / 路径白名单 / nginx 网关限流 |
-| 部署 | Docker Compose + nginx |
+| 部署 | Docker Compose + nginx（**已上线**：腾讯云，API 仅监听 127.0.0.1:8000） |
 
 ## 简历描述
 
