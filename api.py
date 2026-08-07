@@ -116,6 +116,7 @@ class ReviewRequest(BaseModel):
         ..., description="路径: HEAD / 文件路径 / 目录路径",
         json_schema_extra={"example": "HEAD"},
     )
+    format: str = Field("markdown", description="报告格式: markdown / html")
 
 
 class CodeReviewRequest(BaseModel):
@@ -123,6 +124,7 @@ class CodeReviewRequest(BaseModel):
     code: str = Field(..., description="要审查的代码内容")
     language: str = Field("python", description="代码语言")
     filename: str = Field("code.py", description="文件名标识")
+    format: str = Field("markdown", description="报告格式: markdown / html")
 
 
 class ReviewResponse(BaseModel):
@@ -134,6 +136,7 @@ class ReviewResponse(BaseModel):
     total_files: int = 0
     elapsed_seconds: float = 0.0
     report: str = ""
+    report_format: str = "markdown"  # markdown / html
     error: Optional[str] = None
 
 
@@ -200,6 +203,14 @@ async def metrics():
     return Response(content=metrics_endpoint(), media_type="text/plain")
 
 
+def _render_report(result: dict, fmt: str) -> str:
+    """按请求格式渲染报告（markdown / html）"""
+    if fmt == "html":
+        from agents.report_generator import render_html_report
+        return render_html_report(result)
+    return result.get("report", "")
+
+
 @app.post("/api/review", response_model=ReviewResponse)
 async def start_review(req: ReviewRequest):
     """
@@ -227,6 +238,7 @@ async def start_review(req: ReviewRequest):
     )
 
     is_error = bool(result.get("error"))
+    report_format = "html" if req.format == "html" else "markdown"
 
     return ReviewResponse(
         review_id=review_id,
@@ -235,7 +247,8 @@ async def start_review(req: ReviewRequest):
         stats=result.get("stats", {}),
         total_files=result.get("total_files", 0),
         elapsed_seconds=round(elapsed, 2),
-        report=result.get("report", ""),
+        report=_render_report(result, req.format),
+        report_format=report_format,
         error=result.get("error") if is_error else None,
     )
 
@@ -263,6 +276,7 @@ async def review_code(req: CodeReviewRequest):
         os.unlink(tmp_path)
 
     is_error = bool(result.get("error"))
+    report_format = "html" if req.format == "html" else "markdown"
 
     return ReviewResponse(
         review_id=review_id,
@@ -271,7 +285,8 @@ async def review_code(req: CodeReviewRequest):
         stats=result.get("stats", {}),
         total_files=result.get("total_files", 0),
         elapsed_seconds=round(elapsed, 2),
-        report=result.get("report", ""),
+        report=_render_report(result, req.format),
+        report_format=report_format,
         error=result.get("error") if is_error else None,
     )
 

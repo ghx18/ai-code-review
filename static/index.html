@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Code Review</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/static/tailwind.js"></script>
   <script>
     tailwind.config = {
       darkMode: 'class',
@@ -19,7 +19,6 @@
     }
   </script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     @keyframes spin { to { transform: rotate(360deg); } }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
@@ -324,7 +323,7 @@
       switchTab('new');
     });
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+  <script src="/static/marked.min.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

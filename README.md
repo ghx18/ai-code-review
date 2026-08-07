@@ -108,6 +108,10 @@ python main.py --dir ./src
 
 # 输出到文件
 python main.py --git HEAD --output report.md
+
+# 输出格式：markdown（默认）/ json / html
+python main.py --file path/to/file.py --format html -o report.html   # HTML 报告可直接浏览器打开
+python main.py --file path/to/file.py --format json                  # JSON 报告（findings / fix_suggestions 结构化）
 ```
 
 ### 4. 启动服务（API + Celery + Redis）
@@ -142,6 +146,8 @@ python mcp_server.py   # 暴露 review_git_diff / review_file / review_directory
 | `DELETE /api/reviews/{id}` | 删除审查记录 |
 | `WS /ws/review` | WebSocket 实时审查（推送真实进度 + 结果） |
 | `GET /health` / `GET /metrics` | 健康检查 / Prometheus 指标 |
+
+> `POST /api/review` 和 `POST /api/review/code` 请求体支持 `format` 字段（`markdown` / `html`），`report` 字段按所选格式返回，`report_format` 标记实际格式。
 
 ## 项目结构
 

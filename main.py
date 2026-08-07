@@ -89,13 +89,14 @@ def main():
 
     # 输出选项
     parser.add_argument("--output", "-o", type=str, help="输出到文件")
-    parser.add_argument("--format", "-f", choices=["markdown", "json"], default="markdown",
+    parser.add_argument("--format", "-f", choices=["markdown", "json", "html"], default="markdown",
                         help="输出格式（默认 markdown）")
     parser.add_argument("--verbose", "-v", action="store_true", help="显示详细进度")
 
     args = parser.parse_args()
 
     is_json = args.format == "json"
+    is_html = args.format == "html"
 
     # ── 确定输入类型和路径 ──
     if args.git:
@@ -173,6 +174,19 @@ def main():
                 f.write(output)
         else:
             print(output)
+        return
+
+    # ── HTML 输出 ──
+    if is_html:
+        from agents.report_generator import render_html_report
+        output = render_html_report(result)
+        if args.output:
+            with open(args.output, "w", encoding="utf-8") as f:
+                f.write(output)
+            print(f"  ✅ HTML 报告已保存到: {args.output}")
+        else:
+            print(output)
+        print(f"  ⏱  耗时: {elapsed:.1f} 秒")
         return
 
     # ── Markdown 输出 ──
