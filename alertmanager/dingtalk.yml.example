@@ -1,0 +1,11 @@
+# 模板：复制这个文件为 dingtalk.yml 并在服务器上填写真实 token
+# cp alertmanager/dingtalk.yml.example alertmanager/dingtalk.yml
+# dingtalk.yml 已被 .gitignore 忽略，只在服务器上存在，避免密钥入库
+timeout: 5s
+
+targets:
+  review:
+    # 钉钉机器人 Webhook（群设置 → 智能群助手 → 自定义 → 复制）
+    url: 'https://oapi.dingtalk.com/robot/send?access_token=替换成你的token'
+    # 建机器人时选了「加签」才有 secret，没选就删掉这行
+    secret: '替换成你的加签密钥SECxxx'
