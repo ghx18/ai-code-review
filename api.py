@@ -36,7 +36,7 @@ if _PROJECT_ROOT not in sys.path:
 
 warnings.filterwarnings("ignore", message="The default value of `allowed_objects`")
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -46,6 +46,7 @@ from database import init_db, save_review, get_review, list_reviews, delete_revi
 from graph import run_review
 from monitoring import metrics_endpoint, API_REQUESTS, API_LATENCY, REVIEW_TOTAL, REVIEW_LATENCY, REVIEW_ISSUES
 from tools.git_tools import path_is_within_root
+from utils import set_request_id, get_request_id, log_debug, log_info, log_error
 
 # ── 启动时初始化数据库 ──
 init_db()
@@ -67,6 +68,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── 请求日志：每个 HTTP 请求分配 request_id，记录开始/结束（耗时）──
+# 同一次请求触发的 Celery 任务也会带上这个 request_id（见 celery_app.review_task），端到端可串。
+# 健康检查/监控/静态文件高频访问，跳过不刷屏。
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    set_request_id(f"req-{int(time.time() * 1000)}-{id(request) % 100000:05d}")
+    path = request.url.path
+    # 健康检查/监控/静态文件高频访问，默认 INFO 不显示，LOG_LEVEL=DEBUG 才看得到
+    if path in ("/health", "/metrics") or path.startswith("/static"):
+        log_debug("请求", method=request.method, path=path, request_id=get_request_id())
+        return await call_next(request)
+
+    log_info("请求开始", method=request.method, path=path)
+    start = time.time()
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        log_error("请求异常", exc=e, method=request.method, path=path)
+        raise
+    elapsed = time.time() - start
+    log_info("请求完成", method=request.method, path=path,
+             status=response.status_code, elapsed=f"{elapsed:.2f}s")
+    return response
 
 # ── 限流已迁移到 nginx（limit_req，真实 IP + 共享内存 + 有界）──
 # 这里不再放 app 级 IP 限流：
@@ -96,10 +121,10 @@ async def mount_mcp():
     # sse_app() 默认 mount_path=""，因为 FastAPI 已经负责 /mcp 前缀
     mcp_sse = mcp_server.sse_app()
     app.mount("/mcp", mcp_sse, name="mcp")
-    print(f"[api] MCP SSE mounted at /mcp")
-    print(f"[api]   SSE endpoint:  /mcp/sse")
-    print(f"[api]   Messages endpoint: /mcp/messages/")
-    print(f"[api]   Swagger docs:  /docs")
+    log_info("MCP SSE mounted", path="/mcp")
+    log_info("SSE endpoint", path="/mcp/sse")
+    log_info("Messages endpoint", path="/mcp/messages/")
+    log_info("Swagger docs", path="/docs")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -318,7 +343,7 @@ async def start_review_async(req: ReviewRequest):
             detail="没有可用的 Celery worker（或 Redis 不可达），任务无法执行，请稍后再试",
         )
 
-    task = rt.delay(req.input_type, req.input_path)
+    task = rt.delay(req.input_type, req.input_path, request_id=get_request_id())
 
     # 落库：让 GET /api/tasks/{id} 能区分"任务不存在"和"任务在排队"
     #（否则 Celery 对不存在的 task_id 也返回 PENDING，前端会一直误以为在排队）
@@ -440,6 +465,8 @@ async def review_websocket(websocket: WebSocket):
     from database import save_task
 
     await websocket.accept()
+    # WebSocket 不走 HTTP 中间件，这里手动分配 request_id，让任务日志可关联
+    set_request_id(f"ws-{int(time.time() * 1000)}-{id(websocket) % 100000:05d}")
     try:
         data = await websocket.receive_json()
         input_type = data.get("input_type", "")
@@ -476,7 +503,7 @@ async def review_websocket(websocket: WebSocket):
 
         # 提交到 Celery 队列（复用 worker，不再自己开线程）
         try:
-            task = rt.delay(input_type, input_path)
+            task = rt.delay(input_type, input_path, request_id=get_request_id())
         except Exception as e:
             await websocket.send_json({
                 "type": "error",
@@ -565,10 +592,9 @@ if __name__ == "__main__":
     host = os.getenv("API_HOST", "0.0.0.0")
     port = int(os.getenv("API_PORT", "8000"))
 
-    print(f"🤖 AI Code Review API 启动中...")
-    print(f"  🌐 http://{host}:{port}")
-    print(f"  📋 Docs: http://{host}:{port}/docs")
-    print(f"  🔌 MCP:  http://{host}:{port}/mcp/sse")
+    log_info("AI Code Review API 启动", host=host, port=port)
+    log_info("Docs", path=f"http://{host}:{port}/docs")
+    log_info("MCP", path=f"http://{host}:{port}/mcp/sse")
 
     uvicorn.run(
         app,  # 直接传 app 对象，不用字符串模块路径

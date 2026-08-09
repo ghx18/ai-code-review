@@ -78,6 +78,35 @@ REST / WebSocket ──► Celery review_task（Redis 队列）──► 完整 
 
 > ⚠️ 域名 ghx08.tech 备案中；备案生效前大陆访问走 IP，之后再启用 HTTPS。
 
+## 日志与排查
+
+所有日志走 `utils`（stdlib `logging` 封装，`log_info / log_warn / log_error`），**双写**：控制台（stderr）+ 文件。
+
+| 日志去向 | 位置 | 说明 |
+|---------|------|------|
+| 容器控制台 | `docker logs <容器名>` | 每个容器 stdout/stderr 的实时输出 |
+| 文件日志 | 容器内 `/app/data/logs/app.log` | 宿主机在命名卷 `review_data` 下；10MB 轮转，保留 5 份历史，重启不丢 |
+
+每条日志带完整时间戳 + 级别 + `trace_id`（一次审查一个）+ `request_id`（一个 HTTP 请求一个）：
+
+```
+2026-08-09 22:00:31 [INFO] [review-42] [req-142131-87321] 审查开始 (input_type=file, input_path=xxx)
+```
+
+**端到端关联**：API 中间件为每个 HTTP 请求生成 `request_id`，WebSocket / 异步路径把它传给 Celery 任务，worker 侧日志（LLM 耗时、分批进度）与 API 层用同一个 `request_id` 串起来。排查时：
+
+```bash
+# 看某个请求的完整链路（api + worker 都带同一个 request_id）
+docker logs api worker | grep "req-142131-87321"
+
+# 容器内看文件日志（更全，带轮转历史）
+docker exec ai-code-review-api tail -f /app/data/logs/app.log
+```
+
+**级别控制**：环境变量 `LOG_LEVEL`（`DEBUG` / `INFO` / `WARNING` / `ERROR`，默认 `INFO`），`LOG_DIR` 可改日志目录。
+
+**容器日志轮转**：`docker-compose.yml` 里所有服务配置了 json-file 日志 `max-size: 20m`、`max-file: 5`，docker 层自动轮转，防止磁盘被日志写满（写日志也要防爆盘）。
+
 ## 快速开始
 
 ### 1. 安装依赖

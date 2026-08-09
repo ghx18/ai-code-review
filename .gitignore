@@ -5,5 +5,8 @@ __pycache__/
 *.db
 .DS_Store
 
+# 运行日志（docker 落盘 / 文件日志，不入库）
+data/logs/
+
 # 面试备考资料（不提交到项目仓库）
 面试*

@@ -11,6 +11,8 @@ import threading
 import time
 from dotenv import load_dotenv
 
+from utils import log_error
+
 load_dotenv()
 
 # ── 重试配置 ──
@@ -130,7 +132,7 @@ def check_api_key() -> bool:
     """检查 API Key 是否可用"""
     key = os.getenv("DEEPSEEK_API_KEY", "")
     if not key:
-        print("[错误] 未设置 DEEPSEEK_API_KEY，请在 .env 中配置")
+        log_error("未设置 DEEPSEEK_API_KEY，请在 .env 中配置")
         return False
     return True
 

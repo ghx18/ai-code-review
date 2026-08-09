@@ -15,6 +15,8 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
+from utils import log_warn
+
 
 LANGUAGE_MAP = {
     ".py": "python",
@@ -153,7 +155,7 @@ def _run_git(args: list, timeout: int = 30) -> str:
         if result.returncode != 0:
             stderr = result.stderr.decode("utf-8", errors="replace").strip()
             if stderr:
-                print(f"[git] {stderr}")
+                log_warn(f"[git] {stderr}")
             return ""
 
         # 先尝试 UTF-8 解码，失败用 GBK 兜底
@@ -168,13 +170,13 @@ def _run_git(args: list, timeout: int = 30) -> str:
             except Exception:
                 return stdout.decode("utf-8", errors="replace")
     except subprocess.TimeoutExpired:
-        print("[警告] git 命令超时")
+        log_warn("[警告] git 命令超时")
         return ""
     except FileNotFoundError:
         # git 命令不存在
         return ""
     except Exception as e:
-        print(f"[警告] git 命令失败: {e}")
+        log_warn(f"[警告] git 命令失败: {e}")
         return ""
 
 

@@ -27,6 +27,11 @@ services:
       retries: 5
       start_period: 15s
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"   # docker 层日志轮转，防磁盘写满
+        max-file: "5"
     networks:
       - review-net
 
@@ -49,7 +54,13 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
+      - review_data:/app/data   # worker 侧文件日志也落盘持久化（data/logs/app.log）
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     networks:
       - review-net
 
@@ -65,6 +76,11 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     networks:
       - review-net
 
@@ -86,6 +102,11 @@ services:
       timeout: 3s
       retries: 5
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     networks:
       - review-net
 
@@ -101,6 +122,11 @@ services:
     depends_on:
       - db
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     networks:
       - review-net
     profiles:

@@ -123,7 +123,7 @@ def _make_progress_callback(task):
 
 
 @celery_app.task(bind=True, max_retries=2)
-def review_task(self, input_type: str, input_path: str) -> dict:
+def review_task(self, input_type: str, input_path: str, request_id: str = "") -> dict:
     """
     异步执行代码审查。
 
@@ -142,6 +142,11 @@ def review_task(self, input_type: str, input_path: str) -> dict:
     # ── 延迟导入：避免 Worker 启动时加载全部依赖 ──
     from graph import run_review
     from database import save_review as db_save
+    from utils import set_request_id
+
+    # 关联到发起请求的 request_id（由 api.py 传入），worker 侧日志可与 API 层端到端串联
+    if request_id:
+        set_request_id(request_id)
 
     self.update_state(
         state="PROGRESS",

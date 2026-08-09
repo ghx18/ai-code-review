@@ -30,6 +30,8 @@ import warnings
 
 from dotenv import load_dotenv
 
+from utils import log_info
+
 load_dotenv()
 
 # 确保可以 import 项目内的模块
@@ -331,10 +333,10 @@ if __name__ == "__main__":
     parser.add_argument("--host", type=str, default="0.0.0.0", help="SSE 模式监听地址（默认 0.0.0.0）")
     args = parser.parse_args()
 
-    print(f"🤖 AI Code Review MCP Server 启动中...", file=sys.stderr)
-    print(f"  📡 传输协议: {args.transport}", file=sys.stderr)
+    log_info("AI Code Review MCP Server 启动")
+    log_info("传输协议", transport=args.transport)
     if args.transport == "sse":
-        print(f"  🌐 监听地址: {args.host}:{args.port}", file=sys.stderr)
-    print(f"  💾 数据库: {os.getenv('DATABASE_URL', 'sqlite:///./data/reviews.db')}", file=sys.stderr)
+        log_info("监听地址", host=args.host, port=args.port)
+    log_info("数据库", url=os.getenv("DATABASE_URL", "sqlite:///./data/reviews.db"))
 
     mcp.run(transport=args.transport)
