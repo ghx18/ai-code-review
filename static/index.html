@@ -143,6 +143,22 @@
 
             <!-- Bottom Actions -->
             <div class="absolute bottom-3 right-3 flex items-center gap-2">
+              <select id="langSelect" title="选择代码语言（自动检测 = 后端按代码内容识别）"
+                class="px-2 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-xs text-gray-600 dark:text-gray-300 cursor-pointer shadow-sm focus:outline-none">
+                <option value="auto" selected>自动检测</option>
+                <option value="python">Python</option>
+                <option value="javascript">JavaScript</option>
+                <option value="typescript">TypeScript</option>
+                <option value="java">Java</option>
+                <option value="go">Go</option>
+                <option value="rust">Rust</option>
+                <option value="c">C</option>
+                <option value="cpp">C++</option>
+                <option value="csharp">C#</option>
+                <option value="sql">SQL</option>
+                <option value="bash">Shell</option>
+                <option value="html">HTML</option>
+              </select>
               <label for="fileInput" class="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer shadow-sm transition-all hover:shadow-md hover:border-primary-300 dark:hover:border-primary-500">
                 <span class="flex items-center gap-1.5">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
@@ -297,6 +313,7 @@
         overlay.classList.add('opacity-0', 'pointer-events-none');
         const file = e.dataTransfer.files[0];
         if (!file) return;
+        window.__reviewFileName = file.name;   // 记住真实文件名，审查用对扩展名
         const reader = new FileReader();
         reader.onload = function(ev) {
           textarea.value = ev.target.result;
@@ -310,6 +327,7 @@
       document.getElementById('fileInput').addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (!file) return;
+        window.__reviewFileName = file.name;   // 记住真实文件名，审查用对扩展名
         const reader = new FileReader();
         reader.onload = function(ev) {
           textarea.value = ev.target.result;

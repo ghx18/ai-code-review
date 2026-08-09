@@ -50,10 +50,14 @@ async function submitReview(e) {
   setProgress(5, '正在提交审查...');
 
   try {
+    // 语言取下拉框（默认 auto=后端内容探测）；文件名取拖拽/选择的真实文件名，没传则 code.py
+    const langSel = document.getElementById('langSelect');
+    const language = langSel ? langSel.value : 'auto';
+    const filename = window.__reviewFileName || 'code.py';
     const resp = await fetch('/api/review/code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, language: 'python', filename: 'code.py' })
+      body: JSON.stringify({ code, language, filename })
     });
     const data = await resp.json();
     setProgress(100, '审查完成');

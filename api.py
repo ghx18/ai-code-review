@@ -45,7 +45,12 @@ from pydantic import BaseModel, Field
 from database import init_db, save_review, get_review, list_reviews, delete_review
 from graph import run_review
 from monitoring import metrics_endpoint, API_REQUESTS, API_LATENCY, REVIEW_TOTAL, REVIEW_LATENCY, REVIEW_ISSUES
-from tools.git_tools import path_is_within_root
+from tools.git_tools import (
+    path_is_within_root,
+    LANGUAGE_MAP,
+    LANG_TO_EXT,
+    detect_language_from_content,
+)
 from utils import set_request_id, get_request_id, log_debug, log_info, log_error
 
 # ── 启动时初始化数据库 ──
@@ -169,6 +174,23 @@ class ReviewResponse(BaseModel):
 #  辅助函数
 # ═══════════════════════════════════════════════════════════
 
+def _resolve_code_suffix(code: str, filename: str, language: str) -> str:
+    """决定粘贴代码临时文件的扩展名（优先级从高到低）。
+
+    1. 真实文件名后缀（非默认 code.py）→ 信任用户提供的文件名
+    2. 显式选择的语言（排除 auto/python 默认值）→ 用语言映射
+    3. 内容探测兜底 → 修正"前端写死 python 导致 Java 被当 Python 审"的问题
+    4. 都识别不了 → 默认 .py
+    """
+    suffix = Path(filename).suffix
+    if suffix in LANGUAGE_MAP and os.path.basename(filename).lower() != "code.py":
+        return suffix
+    if language not in ("auto", "python", "") and LANG_TO_EXT.get(language):
+        return LANG_TO_EXT[language]
+    detected = detect_language_from_content(code)
+    return LANG_TO_EXT.get(detected, ".py")
+
+
 def _execute_review(input_type: str, input_path: str) -> tuple[dict, float, Optional[int]]:
     """执行审查并保存到数据库，返回 (result, elapsed_seconds, review_id)"""
     with API_LATENCY.labels(endpoint="/api/review").time():
@@ -285,8 +307,8 @@ async def review_code(req: CodeReviewRequest):
     """
     import tempfile
 
-    # 写到临时文件
-    suffix = Path(req.filename).suffix or ".py"
+    # 写到临时文件（扩展名按真实文件名/语言/内容探测 依次兜底，避免语言识别错）
+    suffix = _resolve_code_suffix(req.code, req.filename, req.language)
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=suffix, delete=False, encoding="utf-8"
     ) as f:

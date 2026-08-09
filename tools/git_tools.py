@@ -57,6 +57,105 @@ LANGUAGE_MAP = {
     ".proto": "protobuf",
 }
 
+# 语言 → 扩展名（粘贴代码生成临时文件时用，选最常见后缀）
+LANG_TO_EXT = {
+    "python": ".py", "javascript": ".js", "typescript": ".ts",
+    "java": ".java", "go": ".go", "rust": ".rs",
+    "cpp": ".cpp", "c": ".c", "csharp": ".cs", "ruby": ".rb",
+    "php": ".php", "swift": ".swift", "kotlin": ".kt", "scala": ".scala",
+    "bash": ".sh", "sql": ".sql", "html": ".html", "css": ".css",
+    "json": ".json", "yaml": ".yaml", "markdown": ".md", "toml": ".toml",
+    "ini": ".ini", "dockerfile": ".dockerfile",
+}
+
+
+def detect_language_from_content(code: str) -> Optional[str]:
+    """根据代码内容嗅探语言（粘贴代码没有真实文件名时兜底）。
+
+    启发式计分：每种语言对特征命中累计得分，最高分且 >= 2 才认定。
+    识别不了返回 None，交由调用方回退到扩展名/默认值。
+    目的是修正"前端写死 python 导致 Java 被当 Python 审"这类元数据错误，
+    不追求 100% 准确——拿不准时宁可不判，留给扩展名判断。
+    """
+    if not code or not code.strip():
+        return None
+    head = code[:4000]
+    score = {}
+
+    # Java
+    s = 0
+    s += 3 if re.search(r'\bpackage\s+[\w.]+;', head) else 0
+    s += 2 if re.search(r'\bimport\s+java\.', head) else 0
+    s += 2 if re.search(r'\bpublic\s+static\s+void\s+main\s*\(', head) else 0
+    s += 1 if re.search(r'\b(String|System\.out|@Override|this\.\w+)\b', head) else 0
+    s += 1 if re.search(r'\bpublic\s+(class|void|String|int|boolean)\b', head) else 0
+    score["java"] = s
+
+    # Python
+    s = 0
+    s += 2 if re.search(r'^\s*def\s+\w+', head, re.M) else 0
+    s += 2 if re.search(r'if\s+__name__\s*==', head) else 0
+    s += 1 if re.search(r'^\s*(import|from)\s+[\w.]+\s*$', head, re.M) else 0
+    s += 1 if re.search(r'^\s*class\s+\w+.*:\s*$', head, re.M) else 0
+    s += 1 if re.search(r'print\s*\(', head) else 0
+    score["python"] = s
+
+    # Go
+    s = 0
+    s += 3 if re.search(r'^\s*package\s+\w+\s*$', head, re.M) else 0
+    s += 2 if re.search(r'\bfunc\s+\w+\(', head) else 0
+    s += 1 if re.search(r'\bpackage\s+\w+', head) else 0
+    score["go"] = s
+
+    # Rust
+    s = 0
+    s += 2 if re.search(r'\bfn\s+main\s*\(', head) else 0
+    s += 2 if re.search(r'^\s*use\s+[\w:]+::', head, re.M) else 0
+    s += 1 if re.search(r'\blet\s+(mut\s+)?\w+\s*=', head) else 0
+    score["rust"] = s
+
+    # C/C++（只有出现 std::/cout/cin 才算 cpp，否则算 c）
+    s = 0
+    s += 3 if re.search(r'#include\s*[<"][\w./]+[>"]', head) else 0
+    s += 1 if re.search(r'\b(void|int)\s+\w+\s*\(\s*(void\s*)?\)\s*\{', head) else 0
+    score["cpp" if re.search(r'\b(std::|cout|cin)\b', head) else "c"] = s
+
+    # JavaScript / TypeScript（function/箭头函数是强信号，单独出现也该识别）
+    s = 0
+    s += 2 if re.search(r'\bexport\s+(default\s+)?(function|const|class)\b', head) else 0
+    s += 2 if re.search(r'\bfunction\s*\w*\s*\(', head) else 0
+    s += 2 if re.search(r'=>\s*\{?', head) else 0
+    s += 1 if re.search(r'\bconst\s+\w+\s*=', head) else 0
+    s += 1 if re.search(r'\b(document|window|console)\.', head) else 0
+    # 只有出现 TS 强特征才计入 typescript，避免纯 JS 与 TS 同分时被误判
+    if re.search(r'\binterface\s+\w+|:\s*(string|number|boolean|any|void)\b', head):
+        score["typescript"] = s + 1
+    score["javascript"] = s
+
+    # SQL
+    s = 0
+    s += 2 if re.search(r'^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE\s+TABLE|ALTER\s+TABLE)\b', head, re.I | re.M) else 0
+    s += 1 if re.search(r'\bWHERE\b|\bJOIN\b|\bGROUP\s+BY\b', head, re.I) else 0
+    score["sql"] = s
+
+    # Bash
+    s = 0
+    s += 2 if re.search(r'^#!.*\bbash\b', head, re.M) else 0
+    s += 1 if re.search(r'^\s*(echo|sudo|cd|ls|export)\s+\S', head, re.M) else 0
+    score["bash"] = s
+
+    # JSON / YAML / HTML（半结构化，特征简单）
+    if re.search(r'^\s*\{?\s*"[^"]+":\s*"', head, re.M) and head.lstrip().startswith("{"):
+        score["json"] = 2
+    if re.search(r'^\s*[\w-]+:\s*\S+', head, re.M) and not head.lstrip().startswith(("#", "---")):
+        score["yaml"] = 2
+    if re.search(r'<(!DOCTYPE\s+html|html|div|body|head|script)[^>]*>', head):
+        score["html"] = 2
+
+    best = max(score, key=score.get)
+    return best if score[best] >= 2 else None
+
+
 # 二进制/非审查文件扩展名
 SKIP_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg",
