@@ -1,0 +1,12 @@
+# Grafana 仪表盘自动加载 — 把 ./dashboards/*.json 自动变成面板
+apiVersion: 1
+
+providers:
+  - name: 'ai-code-review'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10       # 修改 JSON 后自动热更新
+    options:
+      path: /etc/grafana/provisioning/dashboards

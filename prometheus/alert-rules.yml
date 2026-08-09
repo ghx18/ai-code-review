@@ -1,0 +1,36 @@
+# 告警规则 — 触发后由 Alertmanager 推送到通知渠道
+# 验证方法：Prometheus UI → Status → Rules 能看到这些规则
+groups:
+  - name: ai-code-review
+    rules:
+      # 1. LLM 错误率超过 50%（持续 2 分钟）
+      - alert: LLMHighErrorRate
+        expr: |
+          rate(llm_calls_total{status="error"}[5m])
+          / (rate(llm_calls_total[5m]) + 1e-9) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM 错误率过高（当前 {{ $value | humanizePercentage }}）"
+          description: "DeepSeek API 连续失败过多，可能是限流/超时，检查是否触发熔断。"
+
+      # 2. 熔断器打开（持续 1 分钟）
+      - alert: CircuitBreakerOpen
+        expr: llm_circuit_breaker == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LLM 熔断器已打开"
+          description: "连续失败超过阈值，请求被快速拒绝。检查 DEEPSEEK_API_KEY 是否有效、账户是否欠费。"
+
+      # 3. 服务不可达（持续 1 分钟）
+      - alert: ServiceDown
+        expr: up{job="ai-code-review"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "api 服务不可达"
+          description: "Prometheus 抓不到 /metrics，服务可能挂掉了，尽快排查。"

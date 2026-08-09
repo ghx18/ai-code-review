@@ -107,6 +107,49 @@ docker exec ai-code-review-api tail -f /app/data/logs/app.log
 
 **容器日志轮转**：`docker-compose.yml` 里所有服务配置了 json-file 日志 `max-size: 20m`、`max-file: 5`，docker 层自动轮转，防止磁盘被日志写满（写日志也要防爆盘）。
 
+## 监控告警（Prometheus + Grafana + Alertmanager）
+
+代码已埋好 Prometheus 指标（`monitoring.py`，`/metrics` 暴露），`docker-compose.yml` 里新增三个监控服务把数据变成**看得见的面板 + 会推送的告警**：
+
+| 服务 | 端口（只绑 127.0.0.1） | 作用 |
+|------|----------------------|------|
+| Prometheus | 9090 | 每 15s 抓一次 `/metrics` 存时间序列，评估告警规则 |
+| Grafana | 3000 | 可视化仪表盘（已自动配置数据源 + 6 面板仪表盘） |
+| Alertmanager | 9093 | 把告警按规则分组去重后推送 |
+| DingTalk 适配器 | 8060 | 把 Alertmanager 的告警转成钉钉机器人能收的消息 |
+
+**首次启动**（镜像需要从 Docker Hub 拉，国内拉不到就配镜像加速器或 `docker load`）：
+
+```bash
+docker compose up -d prometheus grafana alertmanager dingtalk
+```
+
+**查看面板**（安全起见都绑了 127.0.0.1，用 SSH 隧道访问，和看 api 一样）：
+
+```bash
+ssh -L 3000:127.0.0.1:3000 -L 9090:127.0.0.1:9090 <服务器>
+# 浏览器打开 http://localhost:3000  →  Grafana（账号 admin / admin123，上线后务必改密码）
+# 浏览器打开 http://localhost:9090  →  Prometheus
+```
+
+打开 Grafana 就能看到「AI Code Review 监控」仪表盘：API 请求速率、LLM 调用成功/失败、熔断器状态（红=已打开）、审查总次数、审查耗时 p95、各 Agent 平均耗时。
+
+**告警规则**（`prometheus/alert-rules.yml`）：LLM 错误率 >50%、熔断器打开、服务不可达，三个规则自动生效。触发的告警 → Alertmanager 分组去重 → DingTalk 适配器 → 你的钉钉群。
+
+**接入钉钉机器人**（3 步）：
+
+1. **建机器人**：钉钉群 → 右上角设置 → 智能群助手 → 添加机器人 → 自定义 → 复制 Webhook 地址（形如 `https://oapi.dingtalk.com/robot/send?access_token=xxxxxxxx`）
+2. **填 token**：把 `alertmanager/dingtalk.yml` 里的 URL 替换成你自己的地址（若机器人开了「加签」安全设置，把 `secret` 也填上）
+3. **重启生效**：
+
+```bash
+docker compose restart alertmanager dingtalk
+```
+
+测试是否打通：手动停掉一个服务（如 `docker compose stop worker`），1 分钟后 `ServiceDown` 告警触发，钉钉群会收到「告警通知」；重启服务后再收到「恢复通知」。
+
+> 原理：Alertmanager 推给钉钉的 JSON 格式（`alerts[]` 数组）跟钉钉机器人要求的格式（`{"msgtype":"markdown",...}`）不一样，直接推会失败。`prometheus-webhook-dingtalk` 这个适配器就是干这个转换的，所以 `alertmanager.yml` 里填的是它自己的地址 `http://dingtalk:8060/...`，而不是钉钉的地址。
+
 ## 快速开始
 
 ### 1. 安装依赖

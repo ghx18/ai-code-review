@@ -132,6 +132,92 @@ services:
     profiles:
       - dev  # 默认不启动，docker compose --profile dev up 时才启动
 
+  # ─── Prometheus（监控数据抓取 + 告警规则）────────
+  # ⚠️ 首次需拉镜像：国内拉不到就在 /etc/docker/daemon.json 配镜像加速，或 docker load
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ai-code-review-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      # 只绑本机：查看走 SSH 隧道，不对外暴露
+      - "127.0.0.1:9090:9090"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - review-net
+
+  # ─── Grafana（可视化仪表盘）──────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ai-code-review-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123   # ⚠️ 上线后务必改成你自己的强密码
+      - GF_USERS_ALLOW_SIGN_UP=false          # 禁止自助注册
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - review-net
+
+  # ─── Alertmanager（告警推送）────────────────────
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: ai-code-review-alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "127.0.0.1:9093:9093"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - review-net
+
+  # ─── DingTalk 适配器（Alertmanager 告警 → 钉钉机器人消息）────────
+  # ⚠️ 首次需拉镜像 timonwong/prometheus-webhook-dingtalk；把钉钉机器人
+  #    Webhook 填进 alertmanager/dingtalk.yml 后 `docker compose restart alertmanager dingtalk`
+  dingtalk:
+    image: timonwong/prometheus-webhook-dingtalk:latest
+    container_name: ai-code-review-dingtalk
+    command:
+      - '--config.file=/etc/prometheus-webhook-dingtalk/config.yml'
+    volumes:
+      - ./alertmanager/dingtalk.yml:/etc/prometheus-webhook-dingtalk/config.yml:ro
+    ports:
+      - "127.0.0.1:8060:8060"   # 只绑本机：不需要对外暴露
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - review-net
+
 networks:
   review-net:
     driver: bridge
@@ -139,3 +225,5 @@ networks:
 volumes:
   pgdata:
   review_data:
+  prometheus_data:
+  grafana_data:

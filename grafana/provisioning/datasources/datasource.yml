@@ -1,0 +1,11 @@
+# Grafana 数据源自动配置 — 启动即自动接入 Prometheus，无需手动点
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090     # docker 网络内服务名
+    uid: prometheus                 # 仪表盘 JSON 里引用这个 uid
+    isDefault: true
+    editable: true

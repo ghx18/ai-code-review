@@ -1,0 +1,11 @@
+# prometheus-webhook-dingtalk 适配器配置
+# 作用：Alertmanager 推过来的告警 → 转成钉钉机器人能收的消息
+# ⚠️ 把下面的 URL 替换成你自己的钉钉机器人 Webhook（见 README 监控章节）
+timeout: 5s
+
+targets:
+  review:
+    # 替换成你的钉钉机器人地址（钉钉群 → 智能群助手 → 添加机器人 → 自定义）
+    url: 'https://oapi.dingtalk.com/robot/send?access_token=替换成你的钉钉机器人token'
+    # 如果钉钉机器人安全设置选了"加签"，把 secret 填这里，否则留空
+    # secret: ''

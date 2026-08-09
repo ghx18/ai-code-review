@@ -1,0 +1,16 @@
+# Alertmanager 配置 — 把 Prometheus 触发的告警推送到钉钉
+# Alertmanager 的 webhook 格式和钉钉机器人要求的不一样，所以先发给
+# 本机 prometheus-webhook-dingtalk 适配器（dingtalk 容器，端口 8060），
+# 由它转成钉钉能收的消息。真正的钉钉机器人 token 在 dingtalk.yml 里配置。
+route:
+  receiver: 'default'
+  group_by: ['alertname']       # 相同告警名合并
+  group_wait: 30s               # 首次触发后等 30s 再发，防抖动
+  group_interval: 5m            # 同组告警的发送间隔
+  repeat_interval: 4h           # 告警未恢复，4 小时后重复提醒
+
+receivers:
+  - name: 'default'
+    webhook_configs:
+      - url: 'http://dingtalk:8060/dingtalk/review/send'
+        send_resolved: true      # 告警恢复时也推一条
