@@ -73,8 +73,8 @@ REST / WebSocket ──► Celery review_task（Redis 队列）──► 完整 
 
 - **访问地址**: `http://124.222.1.136`（`/health` 已验证返回 ok）
 - **安全现状**: 8000 后门已关闭（外网直连被拒，全部流量只能走 nginx 正门）；限流职责唯一归 nginx（app 旧中间件已删除）
-- **部署/更新**: 一键 `deploy.bat` —— 提交推送 Gitee → ssh 到服务器 `git pull` → `docker compose up -d api worker`
-- **更新线上流程** = 先本地提交代码，再跑 `deploy.bat`
+- **部署/更新**: 本地提交推送 Gitee → SSH 到服务器 `git checkout -- . && git pull` → `docker compose up -d api worker`
+- **更新线上流程** = 先本地提交代码，再按上述步骤同步到服务器
 
 > ⚠️ 域名 ghx08.tech 备案中；备案生效前大陆访问走 IP，之后再启用 HTTPS。
 
