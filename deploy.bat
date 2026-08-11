@@ -8,8 +8,8 @@ git commit -m "update"
 git push
 
 echo.
-echo [2/3] Syncing to server...
-ssh ubuntu@124.222.1.136 "cd /app/ai-code-review && git pull && docker compose restart api worker"
+echo [2/3] Deploying on server...
+ssh tencent "bash /app/ai-code-review/deploy.sh"
 
 echo.
 echo [3/3] Done! http://124.222.1.136
