@@ -69,7 +69,7 @@ services:
     image: redis:7-alpine
     container_name: ai-code-review-redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"   # 只绑本机：公网不能直连 Redis（原 0.0.0.0 暴露公网）
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -93,7 +93,7 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=ai_code_review
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"   # 只绑本机：公网不能直连 PostgreSQL（原 0.0.0.0 暴露公网）
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
