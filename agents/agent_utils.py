@@ -41,17 +41,27 @@ def run_batched_review(
     temperature: float = 0.1,
     max_tokens: int = REVIEW_MAX_TOKENS,
     max_files_per_batch: int = REVIEW_BATCH_MAX_FILES,
+    use_structured: bool = None,
 ):
     """
     按文件分批调 LLM 审查，合并所有批次的 findings。
 
+    use_structured: None 时从环境变量 REVIEW_USE_STRUCTURED 读取
+        （"0"/"false"/"off" 关闭），否则默认 True。
+        开启走 with_structured_output（原生 tool_call + Pydantic 校验），
+        失败自动降级到旧的"文本解析 JSON"路径（timed_invoke + extract_json_array）。
+
     返回:
         (findings, had_error)
         findings: 所有批次合并的审查结果（按批次顺序拼接）
-        had_error: 只要有任何批次失败即为 True（上层据此决定是否标 agent_errors）
+        had_error: 只要有任何批次最终失败即为 True（结构化降级到文本解析不算失败）
     """
-    from tools.llm import timed_invoke, extract_json_array
+    import os
+    from tools.llm import timed_invoke, extract_json_array, structured_invoke, ReviewOutput
     from utils import log
+
+    if use_structured is None:
+        use_structured = os.getenv("REVIEW_USE_STRUCTURED", "1").lower() not in ("0", "false", "off")
 
     all_findings = []
     had_error = False
@@ -70,17 +80,30 @@ def run_batched_review(
             continue
 
         prompt = prompt_template.replace("{language}", language).replace("{code}", code)
-        text, ok = timed_invoke(agent_name, prompt, temperature=temperature)
-        if not ok:
-            had_error = True
-            log(f"[{agent_name}审查] 批次{i + 1}/{len(batches)}跳过（API不可用）: {text}")
-            continue
 
-        findings, parse_error = extract_json_array(text)
-        if parse_error:
-            had_error = True
-            log(f"[{agent_name}审查] 批次{i + 1}/{len(batches)}解析失败: {parse_error}，原始响应前200字符: {text[:200]}")
-            continue
+        findings = None
+        # ── 路径一：结构化输出（原生 tool_call → Pydantic 校验）──
+        if use_structured:
+            parsed, so_err = structured_invoke(prompt, ReviewOutput, temperature=temperature, agent_name=agent_name)
+            if so_err is None and parsed is not None:
+                findings = [f.model_dump() for f in parsed.findings]
+            else:
+                log(f"[{agent_name}审查] 批次{i + 1}/{len(batches)}结构化输出失败（{so_err}），降级文本解析")
+
+        # ── 路径二（降级）：文本 + JSON 解析 ──
+        if findings is None:
+            text, ok = timed_invoke(agent_name, prompt, temperature=temperature)
+            if not ok:
+                had_error = True
+                log(f"[{agent_name}审查] 批次{i + 1}/{len(batches)}跳过（API不可用）: {text}")
+                continue
+
+            batch_findings, parse_error = extract_json_array(text)
+            if parse_error:
+                had_error = True
+                log(f"[{agent_name}审查] 批次{i + 1}/{len(batches)}解析失败: {parse_error}，原始响应前200字符: {text[:200]}")
+                continue
+            findings = batch_findings
 
         all_findings.extend(findings)
 

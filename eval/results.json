@@ -1,0 +1,156 @@
+{
+  "buggy": [
+    {
+      "file": "b01_sql_injection.py",
+      "category": "security",
+      "desc": "SQL注入：字符串拼接SQL",
+      "detected": true,
+      "elapsed_s": 8.1,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "security",
+          "title": "SQL 注入漏洞（字符串拼接 SQL）",
+          "line": 7,
+          "snippet": "cur.execute(\"SELECT * FROM users WHERE name = '\" + name + \"'\")"
+        },
+        {
+          "severity": "critical",
+          "category": "logic",
+          "title": "SQL 注入漏洞：字符串拼接 SQL 查询",
+          "line": 7,
+          "snippet": "cur.execute(\"SELECT * FROM users WHERE name = '\" + name + \"'\")"
+        },
+        {
+          "severity": "major",
+          "category": "logic",
+          "title": "数据库连接未关闭（资源泄漏）",
+          "line": 5,
+          "snippet": "conn = sqlite3.connect(\"app.db\")"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "公开函数缺少文档注释",
+          "line": 4,
+          "snippet": "def get_user(name: str):\n    conn = sqlite3.connect(\"app.db\")"
+        },
+        {
+          "severity": "minor",
+          "category": "performance",
+          "title": "数据库连接未关闭（资源未释放）",
+          "line": 5,
+          "snippet": "conn = sqlite3.connect(\"app.db\")\ncur = conn.cursor()\ncur.execute(...)\nreturn cur.fetchall()"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "魔法字符串硬编码",
+          "line": 6,
+          "snippet": "conn = sqlite3.connect(\"app.db\")\n    cur = conn.cursor()\n    cur.execute(\"SELECT * FROM users WHERE name = '\" + name + \"'\")"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "数据库连接未关闭（资源管理）",
+          "line": 6,
+          "snippet": "conn = sqlite3.connect(\"app.db\")\n    cur = conn.cursor()\n    cur.execute(...)\n    return cur.fetchall()"
+        }
+      ]
+    }
+  ],
+  "clean": [
+    {
+      "file": "c01_clean_api.py",
+      "desc": "干净对照：API处理",
+      "false_positive": false,
+      "substantive_fp": false,
+      "elapsed_s": 18.0,
+      "agent_errors": [],
+      "findings": []
+    },
+    {
+      "file": "c02_clean_utils.py",
+      "desc": "干净对照：工具函数",
+      "false_positive": true,
+      "substantive_fp": true,
+      "elapsed_s": 6.7,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "major",
+          "category": "logic",
+          "title": "split_into_pairs 对奇数长度列表会静默丢弃最后一个元素",
+          "line": 8,
+          "snippet": "def split_into_pairs(items):\n    return list(zip(items[::2], items[1::2]))"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "缺少类型注解",
+          "line": 7,
+          "snippet": "def split_into_pairs(items):\n    return list(zip(items[::2], items[1::2]))"
+        },
+        {
+          "severity": "info",
+          "category": "style",
+          "title": "公开函数缺少文档注释",
+          "line": 1,
+          "snippet": "def clamp(value: float, low: float, high: float) -> float:\n    if value < low:\n        return low\n    if value > high:\n        return high\n    return value"
+        }
+      ]
+    },
+    {
+      "file": "c03_clean_worker.py",
+      "desc": "干净对照：处理逻辑",
+      "false_positive": true,
+      "substantive_fp": false,
+      "elapsed_s": 4.7,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "缺少函数文档注释",
+          "line": 1,
+          "snippet": "def process(items, limit=10):"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "缺少类型注解",
+          "line": 2,
+          "snippet": "def process(items, limit=10):"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "魔法数字/字符串",
+          "line": 3,
+          "snippet": "if item and item.get(\"enabled\"):\n    result.append(item[\"value\"])"
+        }
+      ]
+    }
+  ],
+  "metrics": {
+    "seeded_bugs": 1,
+    "detected": 1,
+    "recall": 1.0,
+    "per_category_recall": {
+      "security": {
+        "detected": 1,
+        "total": 1,
+        "recall": 1.0
+      }
+    },
+    "clean_files": 3,
+    "clean_fp_strict_files": 2,
+    "clean_fp_rate": 0.667,
+    "clean_fp_substantive_files": 1,
+    "clean_fp_substantive_rate": 0.333,
+    "extra_findings_on_buggy": 2,
+    "findings_on_clean": 6,
+    "substantive_findings_on_clean": 1
+  }
+}

@@ -9,7 +9,10 @@ import os
 import sys
 import threading
 import time
+from typing import List, Union
+
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 
 from utils import log_error
 
@@ -205,6 +208,91 @@ def timed_invoke(agent_name: str, prompt: str, temperature: float = 0.3) -> tupl
     _metric_observe(AGENT_LATENCY, agent_name, elapsed)
     log(f"[{agent_name}] LLM 调用耗时 {elapsed:.1f}s, 成功={ok}")
     return text, ok
+
+
+# ═══════════════════════════════════════════════════════════
+#  结构化输出（with_structured_output）
+# ═══════════════════════════════════════════════════════════
+# 字段与 state.Finding / 审查提示词要求完全对齐；全部可选 + 默认值，
+# 保证"模型漏字段"不导致校验失败（与旧 extract_json_array 的容忍度一致）。
+class ReviewFinding(BaseModel):
+    """单个审查发现（对应 state.Finding）"""
+    file: str = ""
+    line: Union[int, str] = 0
+    severity: str = "info"
+    title: str = ""
+    description: str = ""
+    suggestion: str = ""
+    category: str = "unknown"
+    code_snippet: str = ""
+
+
+class ReviewOutput(BaseModel):
+    """一次审查调用返回的发现集合"""
+    findings: List[ReviewFinding] = Field(default_factory=list)
+
+
+def structured_invoke(prompt: str, schema, temperature: float = 0.3, agent_name: str = "") -> tuple:
+    """
+    带结构化输出的 LLM 调用（with_structured_output）：
+    模型通过原生 tool_call 返回符合 schema 的参数，Pydantic 校验成类型化对象。
+
+    复用与 safe_invoke 相同的：熔断 + 重试 + 信号量限流 + Prometheus 埋点。
+
+    include_raw=True 时返回 dict：{"raw": AIMessage, "parsed": obj|None, "parsing_error": err|None}。
+    - parsed 非 None  → 原生工具调用路径生效（log 里 tool_calls>0 可确认）
+    - parsed 为 None   → 模型没产出结构化输出（可能被降级成"指令+解析"），抛错走重试
+
+    返回:
+        (parsed, error)
+        parsed: schema 实例；None 表示失败
+        error: 错误描述；成功为 None
+    """
+    ok, msg = _circuit_breaker()
+    if not ok:
+        _metric_set(LLM_CIRCUIT_BREAKER, 1)
+        _metric_inc(LLM_CALLS, status="rejected")
+        return None, f"[LLM 服务熔断] {msg}"
+
+    llm = None
+    last_error = ""
+    for attempt in range(1 + _RETRY_TIMES):
+        t0 = time.time()
+        try:
+            if llm is None:
+                llm = get_llm(temperature=temperature)
+            with _llm_semaphore:
+                structured = llm.with_structured_output(schema, include_raw=True)
+                result = structured.invoke(prompt)
+            elapsed = time.time() - t0
+
+            parsed = result.get("parsed") if isinstance(result, dict) else None
+            if parsed is None:
+                parse_err = result.get("parsing_error") if isinstance(result, dict) else None
+                raise ValueError(f"模型未产出结构化输出（parsed=None, error={parse_err}）")
+
+            _record_success()
+            _metric_set(LLM_CIRCUIT_BREAKER, 0)
+            _metric_inc(LLM_CALLS, status="success")
+            if agent_name:
+                _metric_inc(AGENT_CALLS, agent=agent_name, status="ok")
+                _metric_observe(AGENT_LATENCY, agent_name, elapsed)
+                raw = result.get("raw")
+                n_tools = len(raw.tool_calls) if (raw is not None and getattr(raw, "tool_calls", None)) else 0
+                from utils import log
+                log(f"[{agent_name}] 结构化调用耗时 {elapsed:.1f}s tool_calls={n_tools}（>0=原生函数调用路径）")
+            return parsed, None
+        except Exception as e:
+            last_error = str(e)
+            if attempt < _RETRY_TIMES:
+                time.sleep(_RETRY_DELAY)
+
+    _record_failure()
+    _metric_set(LLM_CIRCUIT_BREAKER, 1)
+    _metric_inc(LLM_CALLS, status="error")
+    if agent_name:
+        _metric_inc(AGENT_CALLS, agent=agent_name, status="error")
+    return None, f"[结构化输出失败] 重试 {_RETRY_TIMES} 次后仍失败: {last_error}"
 
 
 def extract_json_array(text: str) -> tuple:

@@ -474,6 +474,14 @@ _SECRET_PATTERNS = [
     (re.compile(r"sk-[A-Za-z0-9_\-]{8,}"), "sk-***"),
     # AWS Access Key
     (re.compile(r"AKIA[0-9A-Z]{16}"), "AKIA***"),
+    # GitHub PAT：ghp_/gho_/ghu_/ghs_/github_pat_ 开头（经典/细粒度 token 共用）
+    (re.compile(r"(?i)(?:ghp_|gho_|ghu_|ghs_|github_pat_)[A-Za-z0-9]{15,}"), "ghp_***"),
+    # PEM 私钥块（可能内嵌在 .py/.json 等代码里，扩展名黑名单拦不住）：整块打码
+    (re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----", re.DOTALL),
+     "[REDACTED: PRIVATE KEY]"),
+    # PEM 证书块
+    (re.compile(r"-----BEGIN [A-Z0-9 ]*CERTIFICATE-----.*?-----END [A-Z0-9 ]*CERTIFICATE-----", re.DOTALL),
+     "[REDACTED: CERTIFICATE]"),
     # 常见赋值（带引号）：password = "xxx"
     (re.compile(r"(?i)(password|passwd|secret|api[_-]?key|token|pwd|auth[_-]?token)\s*[=:]\s*['\"][^'\"]{4,}['\"]"),
      r"\1 = '***'"),
