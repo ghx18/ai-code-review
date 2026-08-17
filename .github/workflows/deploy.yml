@@ -18,14 +18,18 @@ jobs:
     steps:
       - name: Checkout 代码
         uses: actions/checkout@v5
+        with:
+          path: repo   # 固定放到 repo/ 子目录，避免嵌套目录导致找不到 Dockerfile
 
       - name: 构建 API 镜像
+        working-directory: repo
         run: docker build -t ai-code-review-api:latest .
 
       - name: 导入镜像到 k3d 集群
         run: k3d image import ai-code-review-api:latest -c aicode
 
       - name: 应用 k8s 清单
+        working-directory: repo
         run: kubectl apply -f k8s/
 
       - name: 重启 api/worker 让新镜像生效
