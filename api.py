@@ -95,6 +95,7 @@ async def request_logging_middleware(request: Request, call_next):
         raise
     elapsed = time.time() - start
     # 记录请求指标（api_requests_total）——健康检查/监控/静态已在上方跳过，只计真实业务请求
+    # （M7 测试：推这个改动应触发 CI/CD 自动重新部署）
     API_REQUESTS.labels(
         method=request.method, endpoint=path, status=str(response.status_code)
     ).inc()
