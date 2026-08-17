@@ -30,6 +30,16 @@ jobs:
           kubectl rollout status deploy/aicode-worker --timeout=180s
 
       - name: 验证服务健康
+        # 显式用 bash：Windows 默认 PowerShell 里 curl 是 Invoke-WebRequest，没有 -sf 参数
+        shell: bash
         run: |
-          sleep 5
-          curl -sf http://localhost:8080/health && echo "✅ health OK"
+          for i in $(seq 1 12); do
+            if curl -sf http://localhost:8080/health; then
+              echo "✅ health OK"
+              exit 0
+            fi
+            echo "等待 api 就绪... ($i/12)"
+            sleep 5
+          done
+          echo "❌ api 未在 60s 内就绪"
+          exit 1
