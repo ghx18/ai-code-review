@@ -11,6 +11,10 @@ jobs:
   deploy:
     runs-on: self-hosted
     timeout-minutes: 15
+    # 统一用 bash 执行步骤（Windows 默认 PowerShell 跑不了本机的 bash 脚本包装命令如 docker）
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout 代码
         uses: actions/checkout@v5
@@ -31,8 +35,6 @@ jobs:
           kubectl rollout status deploy/aicode-worker --timeout=180s
 
       - name: 验证服务健康
-        # 显式用 bash：Windows 默认 PowerShell 里 curl 是 Invoke-WebRequest，没有 -sf 参数
-        shell: bash
         run: |
           for i in $(seq 1 12); do
             if curl -sf http://localhost:8080/health; then
