@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout 代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 构建 API 镜像
         run: docker build -t ai-code-review-api:latest .
