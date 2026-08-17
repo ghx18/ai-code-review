@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: db            # 名字必须叫 db：api 的 DATABASE_URL 里写的就是 db:5432
+  labels:
+    app: aicode
+    component: db
+spec:
+  type: ClusterIP
+  selector:
+    app: aicode
+    component: db
+  ports:
+    - port: 5432
+      targetPort: 5432

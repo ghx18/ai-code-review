@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aicode-api
+  labels:
+    app: aicode
+    component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aicode
+      component: api
+  template:
+    metadata:
+      labels:
+        app: aicode
+        component: api
+    spec:
+      containers:
+        - name: api
+          image: ai-code-review-api:latest
+          # 关键点：镜像是我们用 k3d 导入到集群的本地镜像。
+          # 如果留默认策略，:latest 标签会强制去远端拉镜像（会失败），
+          # IfNotPresent = 本地有就用本地，没有才去拉。
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          # 环境变量统一从 ConfigMap + Secret 注入（M3）
+          envFrom:
+            - configMapRef:
+                name: aicode-config
+            - secretRef:
+                name: aicode-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi

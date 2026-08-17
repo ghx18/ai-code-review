@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+data:
+  # 从 compose 的 prometheus.yml 迁移而来，target 从 api:8000 改成 k8s 服务名 aicode-api:8000
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      # ── 抓取 ai-code-review 的 api 容器 /metrics ──
+      - job_name: 'ai-code-review'
+        static_configs:
+          - targets: ['aicode-api:8000']
+        metrics_path: /metrics
+
+      # ── 抓 Prometheus 自身（看采集是否正常）──
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']

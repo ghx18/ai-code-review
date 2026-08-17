@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: aicode-api
+  labels:
+    app: aicode
+    component: api
+spec:
+  type: ClusterIP
+  selector:
+    app: aicode
+    component: api
+  ports:
+    - port: 8000      # Service 的入口端口（集群内部访问用这个）
+      targetPort: 8000  # 转发到 Pod 里的容器端口

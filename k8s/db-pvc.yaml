@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: aicode-db-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path   # k3d 自带 local-path-provisioner，会自动在节点上划一块本地盘
+  resources:
+    requests:
+      storage: 1Gi

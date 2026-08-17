@@ -5,7 +5,7 @@
       "category": "security",
       "desc": "SQL注入：字符串拼接SQL",
       "detected": true,
-      "elapsed_s": 8.1,
+      "elapsed_s": 8.0,
       "agent_errors": [],
       "findings": [
         {
@@ -27,7 +27,7 @@
           "category": "logic",
           "title": "数据库连接未关闭（资源泄漏）",
           "line": 5,
-          "snippet": "conn = sqlite3.connect(\"app.db\")"
+          "snippet": "conn = sqlite3.connect(\"app.db\")\ncur = conn.cursor()\ncur.execute(...)\nreturn cur.fetchall()"
         },
         {
           "severity": "minor",
@@ -38,24 +38,539 @@
         },
         {
           "severity": "minor",
-          "category": "performance",
-          "title": "数据库连接未关闭（资源未释放）",
+          "category": "style",
+          "title": "硬编码的数据库文件名应定义为常量",
           "line": 5,
-          "snippet": "conn = sqlite3.connect(\"app.db\")\ncur = conn.cursor()\ncur.execute(...)\nreturn cur.fetchall()"
+          "snippet": "conn = sqlite3.connect(\"app.db\")"
+        },
+        {
+          "severity": "minor",
+          "category": "performance",
+          "title": "数据库连接未关闭",
+          "line": 6,
+          "snippet": "conn = sqlite3.connect(\"app.db\")\ncur = conn.cursor()\ncur.execute(\"SELECT * FROM users WHERE name = '\" + name + \"'\")\nreturn cur.fetchall()"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "连接未关闭，资源泄漏",
+          "line": 7,
+          "snippet": "conn = sqlite3.connect(\"app.db\")\n    cur = conn.cursor()\n    cur.execute(\"SELECT * FROM users WHERE name = '\" + name + \"'\")"
+        }
+      ]
+    },
+    {
+      "file": "b02_command_injection.py",
+      "category": "security",
+      "desc": "命令注入：shell拼接用户输入",
+      "detected": true,
+      "elapsed_s": 22.9,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "security",
+          "title": "命令注入漏洞（shell 拼接用户输入）",
+          "line": 6,
+          "snippet": "subprocess.call(\"tar -czf backup.tar.gz \" + dir_path, shell=True)"
+        },
+        {
+          "severity": "critical",
+          "category": "logic",
+          "title": "命令注入漏洞：shell 拼接用户输入",
+          "line": 6,
+          "snippet": "subprocess.call(\"tar -czf backup.tar.gz \" + dir_path, shell=True)"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "公开函数缺少文档注释",
+          "line": 4,
+          "snippet": "def backup(dir_path: str):\n    subprocess.call(\"tar -czf backup.tar.gz \" + dir_path, shell=True)"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "字符串拼接应使用 f-string 或 format",
+          "line": 5,
+          "snippet": "subprocess.call(\"tar -czf backup.tar.gz \" + dir_path, shell=True)"
+        },
+        {
+          "severity": "info",
+          "category": "style",
+          "title": "魔法字符串硬编码",
+          "line": 5,
+          "snippet": "subprocess.call(\"tar -czf backup.tar.gz \" + dir_path, shell=True)"
+        }
+      ]
+    },
+    {
+      "file": "b03_hardcoded_secret.py",
+      "category": "security",
+      "desc": "硬编码密钥",
+      "detected": true,
+      "elapsed_s": 20.9,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "security",
+          "title": "硬编码 API 密钥",
+          "line": 2,
+          "snippet": "API_KEY = '***'"
+        },
+        {
+          "severity": "major",
+          "category": "style",
+          "title": "硬编码密钥作为模块级常量",
+          "line": 2,
+          "snippet": "API_KEY = '***'"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "公开函数缺少文档字符串",
+          "line": 4,
+          "snippet": "def call_service():\n    return {\"Authorization\": f\"Bearer {API_KEY}\"}"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "函数缺少返回类型注解",
+          "line": 4,
+          "snippet": "def call_service():\n    return {\"Authorization\": f\"Bearer {API_KEY}\"}"
+        }
+      ]
+    },
+    {
+      "file": "b04_path_traversal.py",
+      "category": "security",
+      "desc": "路径遍历：未校验用户输入路径",
+      "detected": true,
+      "elapsed_s": 6.5,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "security",
+          "title": "路径遍历漏洞（Path Traversal）",
+          "line": 6,
+          "snippet": "def serve_file(filename: str):\n    path = os.path.join(\"/srv/static\", filename)\n    with open(path, \"rb\") as f:\n        return f.read()"
+        },
+        {
+          "severity": "critical",
+          "category": "logic",
+          "title": "路径遍历漏洞：未校验用户输入的文件路径",
+          "line": 6,
+          "snippet": "def serve_file(filename: str):\n    path = os.path.join(\"/srv/static\", filename)\n    with open(path, \"rb\") as f:\n        return f.read()"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "公开函数缺少文档注释",
+          "line": 4,
+          "snippet": "def serve_file(filename: str):\n    path = os.path.join(\"/srv/static\", filename)\n    with open(path, \"rb\") as f:\n        return f.read()"
         },
         {
           "severity": "minor",
           "category": "style",
           "title": "魔法字符串硬编码",
-          "line": 6,
-          "snippet": "conn = sqlite3.connect(\"app.db\")\n    cur = conn.cursor()\n    cur.execute(\"SELECT * FROM users WHERE name = '\" + name + \"'\")"
+          "line": 5,
+          "snippet": "path = os.path.join(\"/srv/static\", filename)"
+        }
+      ]
+    },
+    {
+      "file": "b05_eval_untrusted.py",
+      "category": "security",
+      "desc": "对不可信输入执行eval",
+      "detected": true,
+      "elapsed_s": 7.0,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "style",
+          "title": "对不可信输入使用 eval 存在严重安全风险",
+          "line": 2,
+          "snippet": "def evaluate(expr: str):\n    return eval(expr)"
+        },
+        {
+          "severity": "critical",
+          "category": "security",
+          "title": "对不可信输入执行 eval 导致任意代码执行",
+          "line": 3,
+          "snippet": "def evaluate(expr: str):\n    return eval(expr)"
+        },
+        {
+          "severity": "critical",
+          "category": "logic",
+          "title": "对不可信输入直接执行 eval 存在任意代码执行风险",
+          "line": 3,
+          "snippet": "def evaluate(expr: str):\n    return eval(expr)"
         },
         {
           "severity": "minor",
           "category": "style",
-          "title": "数据库连接未关闭（资源管理）",
-          "line": 6,
-          "snippet": "conn = sqlite3.connect(\"app.db\")\n    cur = conn.cursor()\n    cur.execute(...)\n    return cur.fetchall()"
+          "title": "缺少函数文档注释",
+          "line": 1,
+          "snippet": "def evaluate(expr: str):\n    return eval(expr)"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "缺少返回类型注解",
+          "line": 2,
+          "snippet": "def evaluate(expr: str):\n    return eval(expr)"
+        }
+      ]
+    },
+    {
+      "file": "b06_concat_loop.py",
+      "category": "performance",
+      "desc": "循环内字符串拼接",
+      "detected": true,
+      "elapsed_s": 6.2,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "major",
+          "category": "performance",
+          "title": "循环内字符串拼接导致 O(n²) 复杂度",
+          "line": 3,
+          "snippet": "out = \"\"\nfor r in rows:\n    out += r + \",\""
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "公开函数缺少文档注释",
+          "line": 2,
+          "snippet": "def build_csv(rows):\n    out = \"\""
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "函数缺少类型注解",
+          "line": 2,
+          "snippet": "def build_csv(rows):"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "循环内字符串拼接效率低下",
+          "line": 3,
+          "snippet": "out = \"\"\nfor r in rows:\n    out += r + \",\""
+        }
+      ]
+    },
+    {
+      "file": "b07_nested_loop.py",
+      "category": "performance",
+      "desc": "O(n²)去重",
+      "detected": true,
+      "elapsed_s": 10.4,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "major",
+          "category": "performance",
+          "title": "去重使用线性扫描导致 O(n²) 时间复杂度",
+          "line": 3,
+          "snippet": "def unique_items(items):\n    seen = []\n    for x in items:\n        if x not in seen:\n            seen.append(x)\n    return seen"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "缺少类型注解",
+          "line": 2,
+          "snippet": "def unique_items(items):"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "公开函数缺少文档注释",
+          "line": 2,
+          "snippet": "def unique_items(items):\n    seen = []"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "去重逻辑使用线性扫描导致 O(n²) 复杂度",
+          "line": 3,
+          "snippet": "seen = []\n    for x in items:\n        if x not in seen:\n            seen.append(x)"
+        }
+      ]
+    },
+    {
+      "file": "b08_nplus1.py",
+      "category": "performance",
+      "desc": "N+1数据库查询",
+      "detected": true,
+      "elapsed_s": 11.8,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "performance",
+          "title": "数据库 N+1 查询问题",
+          "line": 4,
+          "snippet": "for uid in user_ids:\n    orders.extend(db.query(\"SELECT * FROM orders WHERE user_id=?\", uid))"
+        },
+        {
+          "severity": "major",
+          "category": "logic",
+          "title": "user_ids 可能为 None 导致迭代异常",
+          "line": 3,
+          "snippet": "for uid in user_ids:"
+        },
+        {
+          "severity": "major",
+          "category": "logic",
+          "title": "db.query 返回值可能为 None 导致 extend 异常",
+          "line": 4,
+          "snippet": "orders.extend(db.query(\"SELECT * FROM orders WHERE user_id=?\", uid))"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "公开函数缺少类型注解",
+          "line": 2,
+          "snippet": "def load_orders(user_ids):"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "公开函数缺少文档注释",
+          "line": 2,
+          "snippet": "def load_orders(user_ids):\n    orders = []"
+        },
+        {
+          "severity": "info",
+          "category": "style",
+          "title": "魔法字符串硬编码",
+          "line": 3,
+          "snippet": "db.query(\"SELECT * FROM orders WHERE user_id=?\")"
+        }
+      ]
+    },
+    {
+      "file": "b09_off_by_one.py",
+      "category": "logic",
+      "desc": "越界访问",
+      "detected": true,
+      "elapsed_s": 40.3,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "logic",
+          "title": "数组越界：len(items) 作为下标必然越界",
+          "line": 3,
+          "snippet": "def last_item(items):\n    return items[len(items)]"
+        },
+        {
+          "severity": "major",
+          "category": "style",
+          "title": "越界访问：len(items) 直接作为下标导致 IndexError",
+          "line": 2,
+          "snippet": "def last_item(items):\n    return items[len(items)]"
+        },
+        {
+          "severity": "minor",
+          "category": "security",
+          "title": "越界访问（Off-by-one 错误）",
+          "line": 3,
+          "snippet": "return items[len(items)]"
+        }
+      ]
+    },
+    {
+      "file": "b10_wrong_comparison.py",
+      "category": "logic",
+      "desc": "边界条件错误",
+      "detected": true,
+      "elapsed_s": 7.4,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "major",
+          "category": "logic",
+          "title": "成年判断边界条件错误：应为 >= 18 而非 > 18",
+          "line": 3,
+          "snippet": "def is_adult(age):\n    return age > 18"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "缺少类型注解",
+          "line": 2,
+          "snippet": "def is_adult(age):\n    return age > 18"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "公开函数缺少文档注释",
+          "line": 2,
+          "snippet": "def is_adult(age):\n    return age > 18"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "魔法数字",
+          "line": 3,
+          "snippet": "return age > 18"
+        }
+      ]
+    },
+    {
+      "file": "b11_div_zero.py",
+      "category": "logic",
+      "desc": "除以零",
+      "detected": true,
+      "elapsed_s": 7.8,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "logic",
+          "title": "空列表导致除零错误",
+          "line": 3,
+          "snippet": "def average(nums):\n    return sum(nums) / len(nums)"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "公开函数缺少类型注解",
+          "line": 2,
+          "snippet": "def average(nums):\n    return sum(nums) / len(nums)"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "公开函数缺少文档注释",
+          "line": 2,
+          "snippet": "def average(nums):\n    return sum(nums) / len(nums)"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "空列表未处理导致除零异常",
+          "line": 3,
+          "snippet": "return sum(nums) / len(nums)"
+        }
+      ]
+    },
+    {
+      "file": "b12_none_deref.py",
+      "category": "logic",
+      "desc": "空值解引用：.get返回None后直接取字段",
+      "detected": true,
+      "elapsed_s": 6.9,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "logic",
+          "title": "profile 可能为 None 时直接解引用导致 TypeError",
+          "line": 3,
+          "snippet": "profile = user.get(\"profile\")\nreturn profile[\"age\"]"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "缺少类型注解",
+          "line": 2,
+          "snippet": "def get_age(user):\n    profile = user.get(\"profile\")\n    return profile[\"age\"]"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "公开函数缺少文档注释",
+          "line": 2,
+          "snippet": "def get_age(user):\n    profile = user.get(\"profile\")\n    return profile[\"age\"]"
+        }
+      ]
+    },
+    {
+      "file": "b13_wrong_operator.py",
+      "category": "logic",
+      "desc": "逻辑判断写反",
+      "detected": true,
+      "elapsed_s": 7.5,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "critical",
+          "category": "logic",
+          "title": "is_odd 函数逻辑写反，返回偶数判断结果",
+          "line": 3,
+          "snippet": "def is_odd(n):\n    return n % 2 == 0"
+        },
+        {
+          "severity": "major",
+          "category": "style",
+          "title": "逻辑运算符写反：is_odd 判断结果错误",
+          "line": 3,
+          "snippet": "def is_odd(n):\n    return n % 2 == 0"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "公开函数缺少类型注解",
+          "line": 2,
+          "snippet": "def is_odd(n):"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "公开函数缺少文档注释",
+          "line": 2,
+          "snippet": "def is_odd(n):\n    return n % 2 == 0"
+        }
+      ]
+    },
+    {
+      "file": "b14_style.py",
+      "category": "style",
+      "desc": "未使用导入+非PEP8命名",
+      "detected": true,
+      "elapsed_s": 8.3,
+      "agent_errors": [],
+      "findings": [
+        {
+          "severity": "major",
+          "category": "style",
+          "title": "未使用的导入",
+          "line": 2,
+          "snippet": "import os\nimport sys"
+        },
+        {
+          "severity": "major",
+          "category": "style",
+          "title": "函数命名不符合 PEP8 规范",
+          "line": 5,
+          "snippet": "def calculateSum(a, b):"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "参数命名不符合 PEP8 规范",
+          "line": 5,
+          "snippet": "def calculateSum(a, b):"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "缺少类型注解",
+          "line": 5,
+          "snippet": "def calculateSum(a, b):"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
+          "title": "缺少文档字符串",
+          "line": 5,
+          "snippet": "def calculateSum(a, b):\n    return a + b"
         }
       ]
     }
@@ -66,7 +581,7 @@
       "desc": "干净对照：API处理",
       "false_positive": false,
       "substantive_fp": false,
-      "elapsed_s": 18.0,
+      "elapsed_s": 2.4,
       "agent_errors": [],
       "findings": []
     },
@@ -75,13 +590,13 @@
       "desc": "干净对照：工具函数",
       "false_positive": true,
       "substantive_fp": true,
-      "elapsed_s": 6.7,
+      "elapsed_s": 21.5,
       "agent_errors": [],
       "findings": [
         {
           "severity": "major",
           "category": "logic",
-          "title": "split_into_pairs 对奇数长度列表会静默丢弃最后一个元素",
+          "title": "split_into_pairs 对奇数长度列表静默丢弃最后一个元素",
           "line": 8,
           "snippet": "def split_into_pairs(items):\n    return list(zip(items[::2], items[1::2]))"
         },
@@ -95,9 +610,9 @@
         {
           "severity": "info",
           "category": "style",
-          "title": "公开函数缺少文档注释",
+          "title": "模块缺少文档注释内容",
           "line": 1,
-          "snippet": "def clamp(value: float, low: float, high: float) -> float:\n    if value < low:\n        return low\n    if value > high:\n        return high\n    return value"
+          "snippet": "\"\"\"评估用例 c02 — 干净对照：无缺陷的工具函数\"\"\""
         }
       ]
     },
@@ -112,13 +627,6 @@
         {
           "severity": "minor",
           "category": "style",
-          "title": "缺少函数文档注释",
-          "line": 1,
-          "snippet": "def process(items, limit=10):"
-        },
-        {
-          "severity": "minor",
-          "category": "style",
           "title": "缺少类型注解",
           "line": 2,
           "snippet": "def process(items, limit=10):"
@@ -126,19 +634,41 @@
         {
           "severity": "minor",
           "category": "style",
+          "title": "公开函数缺少文档注释",
+          "line": 2,
+          "snippet": "def process(items, limit=10):"
+        },
+        {
+          "severity": "minor",
+          "category": "style",
           "title": "魔法数字/字符串",
-          "line": 3,
-          "snippet": "if item and item.get(\"enabled\"):\n    result.append(item[\"value\"])"
+          "line": 5,
+          "snippet": "if item and item.get(\"enabled\"):\n            result.append(item[\"value\"])"
         }
       ]
     }
   ],
   "metrics": {
-    "seeded_bugs": 1,
-    "detected": 1,
+    "seeded_bugs": 14,
+    "detected": 14,
     "recall": 1.0,
     "per_category_recall": {
       "security": {
+        "detected": 5,
+        "total": 5,
+        "recall": 1.0
+      },
+      "performance": {
+        "detected": 3,
+        "total": 3,
+        "recall": 1.0
+      },
+      "logic": {
+        "detected": 5,
+        "total": 5,
+        "recall": 1.0
+      },
+      "style": {
         "detected": 1,
         "total": 1,
         "recall": 1.0
@@ -149,7 +679,7 @@
     "clean_fp_rate": 0.667,
     "clean_fp_substantive_files": 1,
     "clean_fp_substantive_rate": 0.333,
-    "extra_findings_on_buggy": 2,
+    "extra_findings_on_buggy": 3,
     "findings_on_clean": 6,
     "substantive_findings_on_clean": 1
   }

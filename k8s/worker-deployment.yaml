@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aicode-worker
+  labels:
+    app: aicode
+    component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aicode
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: aicode
+        component: worker
+    spec:
+      containers:
+        - name: worker
+          # 和 api 同一个镜像，靠 command 覆盖启动命令
+          image: ai-code-review-api:latest
+          imagePullPolicy: IfNotPresent
+          # 重点：k8s 的 command 相当于 Dockerfile 的 ENTRYPOINT，
+          # args 相当于 CMD。这里用 celery 启动，不再用 uvicorn
+          command: ["celery", "-A", "celery_app", "worker"]
+          args: ["--loglevel=info", "--concurrency=4"]
+          envFrom:
+            - configMapRef:
+                name: aicode-config
+            - secretRef:
+                name: aicode-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi

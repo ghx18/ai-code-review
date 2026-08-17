@@ -1,0 +1,35 @@
+# CI/CD：代码 push 到 GitHub 后，自动构建镜像并部署到本地 k3d 集群
+# 跑在 self-hosted runner（你自己电脑上），所以能直接操作本地 docker + k3d
+name: Deploy to k3d
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # 也可以在 Actions 页面手动点 Run
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 构建 API 镜像
+        run: docker build -t ai-code-review-api:latest .
+
+      - name: 导入镜像到 k3d 集群
+        run: k3d image import ai-code-review-api:latest -c aicode
+
+      - name: 应用 k8s 清单
+        run: kubectl apply -f k8s/
+
+      - name: 重启 api/worker 让新镜像生效
+        run: |
+          kubectl rollout restart deploy/aicode-api deploy/aicode-worker
+          kubectl rollout status deploy/aicode-api --timeout=180s
+          kubectl rollout status deploy/aicode-worker --timeout=180s
+
+      - name: 验证服务健康
+        run: |
+          sleep 5
+          curl -sf http://localhost:8080/health && echo "✅ health OK"

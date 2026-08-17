@@ -94,6 +94,10 @@ async def request_logging_middleware(request: Request, call_next):
         log_error("请求异常", exc=e, method=request.method, path=path)
         raise
     elapsed = time.time() - start
+    # 记录请求指标（api_requests_total）——健康检查/监控/静态已在上方跳过，只计真实业务请求
+    API_REQUESTS.labels(
+        method=request.method, endpoint=path, status=str(response.status_code)
+    ).inc()
     log_info("请求完成", method=request.method, path=path,
              status=response.status_code, elapsed=f"{elapsed:.2f}s")
     return response

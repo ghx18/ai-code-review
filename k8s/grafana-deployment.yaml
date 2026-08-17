@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aicode-grafana
+  labels:
+    app: aicode
+    component: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aicode
+      component: grafana
+  template:
+    metadata:
+      labels:
+        app: aicode
+        component: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: "admin"
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: "admin123"
+          ports:
+            - containerPort: 3000
+          volumeMounts:
+            # 把 datasources.yaml 挂到 provisioning/datasources 目录
+            - name: provisioning
+              mountPath: /etc/grafana/provisioning/datasources
+            # dashboard provider 配置 + 仪表盘 json 文件
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi   # Grafana 13 默认 256Mi 会 OOM，抬高到 512Mi
+      volumes:
+        - name: provisioning
+          configMap:
+            name: grafana-provisioning
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider
+        - name: dashboards
+          configMap:
+            name: grafana-dashboard
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  labels:
+    app: aicode
+    component: grafana
+spec:
+  type: ClusterIP
+  selector:
+    app: aicode
+    component: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000

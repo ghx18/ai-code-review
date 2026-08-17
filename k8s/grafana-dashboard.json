@@ -1,0 +1,106 @@
+{
+  "uid": "aicode-dashboard",
+  "title": "AI 代码审查监控",
+  "tags": ["aicode"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "editable": true,
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "API 请求速率（按端点）",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (endpoint) (rate(api_requests_total[5m]))", "legendFormat": "{{endpoint}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "代码审查速率（按状态）",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 2,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (status) (rate(review_total[5m]))", "legendFormat": "{{status}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM 调用速率（按状态）",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 3,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (status) (rate(llm_calls_total[5m]))", "legendFormat": "{{status}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "平均审查耗时（秒）",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 4,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(review_latency_seconds_sum[5m]) / rate(review_latency_seconds_count[5m])",
+          "legendFormat": "平均耗时"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "type": "stat",
+      "title": "审查问题（按严重程度）",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 32 },
+      "id": 5,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "review_issues_total", "legendFormat": "{{severity}}" }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "type": "stat",
+      "title": "LLM 熔断器状态（0=正常 1=熔断）",
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 32 },
+      "id": 6,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "llm_circuit_breaker", "legendFormat": "熔断器" }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "color": "green", "text": "正常" } } },
+            { "type": "value", "options": { "1": { "color": "red", "text": "熔断中" } } }
+          ]
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

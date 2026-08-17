@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aicode-ingress
+  labels:
+    app: aicode
+spec:
+  ingressClassName: traefik
+  rules:
+    - http:
+        paths:
+          # 把所有路径都转发到 api 服务
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: aicode-api
+                port:
+                  number: 8000

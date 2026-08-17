@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-provisioning
+data:
+  # Grafana 启动时自动加载这个数据源配置，指向 k8s 里的 Prometheus 服务
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        uid: prometheus   # 固定 uid，仪表盘面板靠它引用这个数据源
+        isDefault: true
