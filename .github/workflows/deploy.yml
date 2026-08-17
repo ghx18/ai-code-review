@@ -21,18 +21,6 @@ jobs:
         with:
           path: repo   # 固定放到 repo/ 子目录，避免嵌套目录导致找不到 Dockerfile
 
-      - name: 诊断目录结构（调试用）
-        run: |
-          OUT=/c/Users/Lenovo/ci-diag.txt
-          echo "pwd: $(pwd)" | tee $OUT
-          echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE" | tee -a $OUT
-          echo "--- 顶层 ---" | tee -a $OUT
-          ls -la | tee -a $OUT
-          echo "--- 找 Dockerfile ---" | tee -a $OUT
-          find . -maxdepth 3 -name "Dockerfile" | tee -a $OUT
-          echo "--- git HEAD ---" | tee -a $OUT
-          git log --oneline -1 2>/dev/null | tee -a $OUT || echo "无 git" | tee -a $OUT
-
       - name: 构建 API 镜像
         working-directory: repo
         run: docker build -t ai-code-review-api:latest .
