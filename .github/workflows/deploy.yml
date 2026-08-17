@@ -21,6 +21,17 @@ jobs:
         with:
           path: repo   # 固定放到 repo/ 子目录，避免嵌套目录导致找不到 Dockerfile
 
+      - name: 诊断目录结构（调试用）
+        run: |
+          echo "pwd: $(pwd)"
+          echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
+          echo "--- 顶层 ---"
+          ls -la
+          echo "--- 找 Dockerfile ---"
+          find . -maxdepth 3 -name "Dockerfile"
+          echo "--- git HEAD ---"
+          git log --oneline -1 2>/dev/null || echo "无 git"
+
       - name: 构建 API 镜像
         working-directory: repo
         run: docker build -t ai-code-review-api:latest .
