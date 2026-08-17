@@ -60,7 +60,7 @@ init_db()
 app = FastAPI(
     title="AI Code Review API",
     description="基于 LangGraph 的多 Agent 代码审查系统 — REST API + WebSocket + MCP",
-    version="1.0.0",
+    version="1.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -245,7 +245,7 @@ async def health():
     return {
         "status": "ok",
         "service": "ai-code-review",
-        "version": "1.0.0",
+        "version": "1.1.0",
     }
 
 
