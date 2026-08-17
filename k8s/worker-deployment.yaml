@@ -6,7 +6,7 @@ metadata:
     app: aicode
     component: worker
 spec:
-  replicas: 1
+  # 副本数由 aicode-worker-hpa（M8）管理，这里不写死，避免 CI/CD apply 和 HPA 抢控制权
   selector:
     matchLabels:
       app: aicode
