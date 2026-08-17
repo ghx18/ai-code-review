@@ -23,14 +23,15 @@ jobs:
 
       - name: 诊断目录结构（调试用）
         run: |
-          echo "pwd: $(pwd)"
-          echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
-          echo "--- 顶层 ---"
-          ls -la
-          echo "--- 找 Dockerfile ---"
-          find . -maxdepth 3 -name "Dockerfile"
-          echo "--- git HEAD ---"
-          git log --oneline -1 2>/dev/null || echo "无 git"
+          OUT=/c/Users/Lenovo/ci-diag.txt
+          echo "pwd: $(pwd)" | tee $OUT
+          echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE" | tee -a $OUT
+          echo "--- 顶层 ---" | tee -a $OUT
+          ls -la | tee -a $OUT
+          echo "--- 找 Dockerfile ---" | tee -a $OUT
+          find . -maxdepth 3 -name "Dockerfile" | tee -a $OUT
+          echo "--- git HEAD ---" | tee -a $OUT
+          git log --oneline -1 2>/dev/null | tee -a $OUT || echo "无 git" | tee -a $OUT
 
       - name: 构建 API 镜像
         working-directory: repo
