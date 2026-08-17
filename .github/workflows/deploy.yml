@@ -30,7 +30,13 @@ jobs:
 
       - name: 应用 k8s 清单
         working-directory: repo
-        run: kubectl apply -f k8s/
+        run: |
+          # k8s/ 目录里混着非清单文件（grafana-dashboard.json、几个 Dockerfile），
+          # kubectl apply -f k8s/ 会把它们当清单解析报错，所以只 apply *.yaml
+          for f in k8s/*.yaml; do
+            echo "--- apply $f ---"
+            kubectl apply -f "$f"
+          done
 
       - name: 重启 api/worker 让新镜像生效
         run: |
